@@ -1,0 +1,10 @@
+prefix=/Users/ygup3491/Documents/FBQC_Cavity_codes/Errors-in-FBQC-Code/.CondaPkg/env
+exec_prefix=/Users/ygup3491/Documents/FBQC_Cavity_codes/Errors-in-FBQC-Code/.CondaPkg/env
+libdir=/Users/ygup3491/Documents/FBQC_Cavity_codes/Errors-in-FBQC-Code/.CondaPkg/env/lib
+includedir=/Users/ygup3491/Documents/FBQC_Cavity_codes/Errors-in-FBQC-Code/.CondaPkg/env/include
+
+Name: libjpeg
+Description: A SIMD-accelerated JPEG codec that provides the libjpeg API
+Version: 3.0.0
+Libs: -L${libdir} -ljpeg
+Cflags: -I${includedir}

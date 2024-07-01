@@ -1,7 +1,7 @@
 module MPOFuncs
 
 using ITensors, Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations
-export beamsplitter!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
+export beamsplitter!, swap_nextsite!, swap_ij!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 # export ITensors, beamsplitter!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 
 
@@ -27,6 +27,11 @@ function ITensors.op(::OpName"Excite1" , ::SiteType"Qubit")
     mat[2,2] = 1
     return mat
 end
+function ITensors.op(::OpName"ExciteMax" , ::SiteType"Qudit" , d::Int)
+    mat = zeros(d, d)
+    mat[d,d] = 1
+    return mat
+end
 function ITensors.op(::OpName"Sz" , ::SiteType"Qudit" , d::Int)
     mat = zeros(d, d)
     mat[1,1] = 1
@@ -34,9 +39,32 @@ function ITensors.op(::OpName"Sz" , ::SiteType"Qudit" , d::Int)
     return mat
 end
 
+function n_copy_mpo(mpo_i, sites, n)
+    #Assuming qudit
+    l = length(mpo_i)
+    new_inds = siteinds("Qudit", n*l, dim=dim(sites[1]))
+    I_mpo = MPO(l*n)
+    I_op = OpSum()
+    for i=1:l
+        for j=1:n
+            ind = i + (l*(j-1))
+            I_mpo[ind] = deepcopy(mpo_i[i])
+            replaceind!(I_mpo[ind], sites[i], new_inds[ind])
+            replaceind!(I_mpo[ind], sites[i]', new_inds[ind]')
+            I_op += "I",ind
+        end
+    end
+    #applying I to change up link indices
+    I_op = MPO(I_op, new_inds)
+    I_mpo = apply(I_op, I_mpo)
+    I_mpo /= tr(I_mpo)
+    #normalize!(I_mpo)
+    return I_mpo, new_inds
+end
+
 ##### Defining operations on the MPO #####
 #-------------------------------------------------------------------------
-function beamsplitter!(MPO_i, index_1, index_2, site_list)
+function beamsplitter!(MPO_i, site_list, index_1, index_2)
     cutoff = 1E-15
     
     op_1 = ((op("A",site_list[index_1]) * op("Adag",site_list[index_2])) + (op("A",site_list[index_2]) * op("Adag",site_list[index_1])))
@@ -53,10 +81,46 @@ function beamsplitter!(MPO_i, index_1, index_2, site_list)
 
     MPO_i[:] = H3
     MPO_i /= trace(MPO_i, site_list)
-
-    return nothing
+    # return nothing
 end
 
+function beamsplitter_nextsite!(MPO_i, site_list, index_1)
+    cutoff = 1E-15
+    
+    op_1 = ((op("A",site_list[index_1]) * op("Adag",site_list[index_1+1])) + (op("A",site_list[index_1+1]) * op("Adag",site_list[index_1])))
+    H_ = exp((-im/4) * pi * op_1)
+    H2 = apply(H_, MPO_i; cutoff=cutoff)
+    #easier to use apply since preserves MPO data type and doesnt change to iTensor type
+    #requires iTensor be applied to an MPO in that order particularly hence double dagger
+    H3 = conj(swapprime( apply( H_, swapprime(conj(H2), 1,0); cutoff ), 1,0))
+
+    MPO_i[:] = H3
+    MPO_i /= trace(MPO_i, site_list)
+    # return nothing
+end
+
+function swap_nextsite!(mpo_i, sites, i)
+    #Function swaps the i-th and i+1-th sites in the mpo
+    mpo_contrac = mpo_i[i] * mpo_i[i+1]
+    beg_ind = uniqueinds(mpo_i[i+1],mpo_i[i])
+    length(mpo_i) < i+2 ? nothing : deleteat!(beg_ind, findall(x->x==commonind(mpo_i[i+1], mpo_i[i+2]),beg_ind))
+    i == 1 ? nothing : push!(beg_ind, commonind(mpo_i[i], mpo_i[i-1]))
+    U,S,V = svd(mpo_contrac, beg_ind)
+    mpo_i[i] = U
+    mpo_i[i+1] = S * V
+
+    place_holder = sites[i]
+    sites[i] = sites[i+1]
+    sites[i+1] = place_holder
+    # return mpo_i, sites
+end
+
+function swap_ij!(mpo_i, sites, i, j)
+# Assuming j > i and both in length
+    for k=i:j-1
+        swap_nextsite!(mpo_i, sites, k)
+    end
+end
 
 #func calc drho/dt
 function drho(rho, p, t)
@@ -189,7 +253,7 @@ end
 
 function ITensors.expect(MPO_i, sites_i)
     list_exp = []
-    for i in 1:length(sites_i)
+    for i in eachindex(sites_i)
         append!(list_exp, trace(apply( op("n", sites_i[i]), MPO_i), sites_i))
     end
     return list_exp
@@ -351,7 +415,7 @@ function cash_karppe(sys, sys_sites, d_rho, t, dt; tol=0.1, p_ = nothing, max_dt
     new_dt = dt * (tol/error)^0.2
     # new_dt > dt ? new_dt = dt : nothing
     # println(new_dt)
-    max_dt == nothing ? nothing : ((new_dt>max_dt) && (new_dt=max_dt; true) )
+    isnothing(max_dt) ? nothing : ((new_dt>max_dt) && (new_dt=max_dt; true) )
     ks_new = k_gen(sys, d_rho, t, new_dt, a, b, p=p_)
     # print(ks_new)
     better_sys = sys + sum(c.*ks_new)

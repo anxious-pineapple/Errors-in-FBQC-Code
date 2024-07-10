@@ -65,7 +65,7 @@ end
 ##### Defining operations on the MPO #####
 #-------------------------------------------------------------------------
 function beamsplitter!(MPO_i, site_list, index_1, index_2)
-    cutoff = 1E-15
+    cutoff = 1E-10
     
     op_1 = ((op("A",site_list[index_1]) * op("Adag",site_list[index_2])) + (op("A",site_list[index_2]) * op("Adag",site_list[index_1])))
     H_ = exp((-im/4) * pi * op_1)
@@ -85,7 +85,7 @@ function beamsplitter!(MPO_i, site_list, index_1, index_2)
 end
 
 function beamsplitter_nextsite!(MPO_i, site_list, index_1)
-    cutoff = 1E-15
+    cutoff = 1E-10
     
     op_1 = ((op("A",site_list[index_1]) * op("Adag",site_list[index_1+1])) + (op("A",site_list[index_1+1]) * op("Adag",site_list[index_1])))
     H_ = exp((-im/4) * pi * op_1)
@@ -101,25 +101,37 @@ end
 
 function swap_nextsite!(mpo_i, sites, i)
     #Function swaps the i-th and i+1-th sites in the mpo
-    mpo_contrac = mpo_i[i] * mpo_i[i+1]
-    beg_ind = uniqueinds(mpo_i[i+1],mpo_i[i])
-    length(mpo_i) < i+2 ? nothing : deleteat!(beg_ind, findall(x->x==commonind(mpo_i[i+1], mpo_i[i+2]),beg_ind))
-    i == 1 ? nothing : push!(beg_ind, commonind(mpo_i[i], mpo_i[i-1]))
-    U,S,V = svd(mpo_contrac, beg_ind)
-    mpo_i[i] = U
-    mpo_i[i+1] = S * V
+
+    #archived function
+    # mpo_contrac = mpo_i[i] * mpo_i[i+1]
+    # beg_ind = uniqueinds(mpo_i[i+1],mpo_i[i])
+    # length(mpo_i) < i+2 ? nothing : deleteat!(beg_ind, findall(x->x==commonind(mpo_i[i+1], mpo_i[i+2]),beg_ind))
+    # i == 1 ? nothing : push!(beg_ind, commonind(mpo_i[i], mpo_i[i-1]))
+    # U,S,V = svd(mpo_contrac, beg_ind; cutoff=1E-12)
+    # # U,S,V = svd(mpo_contrac, beg_ind)
+    # mpo_i[i] = U
+    # mpo_i[i+1] = S * V
+
+    mpo_new = swapbondsites(mpo_i, i)
 
     place_holder = sites[i]
     sites[i] = sites[i+1]
     sites[i+1] = place_holder
-    # return mpo_i, sites
+    return mpo_new
 end
 
 function swap_ij!(mpo_i, sites, i, j)
 # Assuming j > i and both in length
-    for k=i:j-1
-        swap_nextsite!(mpo_i, sites, k)
-    end
+
+    # for k=i:j-1
+    #     swap_nextsite!(mpo_i, sites, k)
+    # end
+    mpo_new = truncate!(movesite(mpo_i, Pair(i,j)),site_range=i:j, cutoff=1E-10)
+    place_holder = sites[i]
+    deleteat!(sites, i)
+    insert!(sites, j, place_holder)
+
+    return mpo_new
 end
 
 #func calc drho/dt
@@ -274,6 +286,7 @@ function measure_a(mpo_i, sites, site1)
     A_op = OpSum()
     A_op += "A",site1
     A_op = MPO(A_op, sites)
+    # println(A_op)
     Ad_op = swapprime(conj(A_op), 1,0)
     val = trace(apply(A_op, apply(mpo_i, Ad_op)), sites)
     return val
@@ -298,6 +311,25 @@ function g_34(mpo_i, sites, no_cavs)
     end
     denom =0.5 * denom1 * denom2
 
+    return G_34/denom
+end
+
+function g_34_new(mpo_i, sites, no_cavs)
+    # measuring G_34 t, tau integrated
+    G_34 = 0.0
+    denom1 = 0.0
+    denom2 = 0.0
+    for i=1:no_cavs
+        for j=1:no_cavs
+            #if v^2 integrates out to 1
+            # println(2*i-1, " ", 2*j)
+            term = measure_corel(mpo_i, sites, 2*i-1, 2*j)
+            G_34 += 0.5 * term
+        end
+        denom1 += measure_a(mpo_i, sites, 2*i-1)
+        denom2 += measure_a(mpo_i, sites, 2*i)
+    end
+    denom =0.5 * denom1 * denom2
     return G_34/denom
 end
 
@@ -438,6 +470,176 @@ function cash_karppe_evolve(no_cavs, depha, gamma, dt, t_final)
 
     while t<t_final
         sys_, dt_ = cash_karppe(sys, sys_sites, drho, t, dt; tol=1E-4, p_= (sys_sites, g_f, sqrt(gamma), depha), max_dt = dt*10)
+        t += dt_
+        sys = sys_/trace(sys_, sys_sites)
+        push!(expect_list, ITensors.expect(sys, sys_sites))
+        # push!(t_list, t)
+    end
+
+    copy_sys = MPO(no_cavs)
+    copy_sys[1] = sys[1] * delta(sys_sites[1], sys_sites[1]') * sys[2]
+    for i=2:no_cavs
+        copy_sys[i] = deepcopy(sys[i+1]) 
+    end
+    copy_sys /= trace(copy_sys, sys_sites[2:end])
+
+    return copy_sys, sys_sites[2:end], expect_list
+    # , t_list
+end
+
+###########################################################
+#test area 
+
+cda = [;]
+cad = [;]
+ada = [;]
+ada_pre = Dict()
+ada_post = Dict()
+
+function init(sites,rg)
+    no_cavs = length(sites) - 1
+    for i=1:no_cavs
+        term_cda = OpSum()
+        term_cda += rg,"Adag",1,"A",i+1
+        push!(cda, MPO(term_cda,sites))
+        term_cad = OpSum()
+        term_cad += rg,"A",1,"Adag",i+1
+        push!(cad, MPO(term_cad, sites))
+        term_ada = OpSum()
+        term_ada += "N",i+1
+        push!(ada, MPO(term_ada, sites))
+        for j=1:i-1
+            # key is dagger index, then non dagger index
+            term_pre = OpSum()
+            term_pre += "Adag",i+1,"A",j+1
+            ada_pre[(i,j)] = MPO(term_pre, sites)
+            term_post = OpSum()
+            term_post += "A",i+1,"Adag",j+1
+            ada_post[(j,i)] = MPO(term_post, sites)
+        end
+    end
+end
+
+function pre_term2(sites, g_f, dep, t)
+    no_cavs = length(sites) - 1
+    pre = OpSum()
+    pre += dep,"I",1
+    pre += (rg^2),"N",1
+    pre = MPO(pre, sites)
+    for i=1:no_cavs
+        pre += cad[i] * 2 * g_f[i](t)
+        pre += ada[i] * g_f[i](t)^2
+        for j=1:i-1
+            pre += ada_pre[(i,j)] * 2 * g_f[j](t) * g_f[i](t)
+        end
+    end
+    return (-0.5 * pre)
+end
+
+function post_term2(sites, g_f, dep, t)
+    no_cavs = length(sites) - 1
+    post = OpSum()
+    post += dep,"I",1
+    post += (rg^2),"N",1
+    post = MPO(post, sites)
+    for i=1:no_cavs
+        post += cda[i] * 2 * g_f[i](t)
+        post += ada[i] * g_f[i](t)^2
+        for j=i+1:no_cavs
+            post += ada_post[(j,i)] * 2 * g_f[j](t) * g_f[i](t)
+        end
+    end
+    return (-0.5 * post)    
+end
+
+
+function pre_term(sites, g_f, rg, dep, t)
+    no_cavs = length(sites) - 1
+    pre = OpSum()
+    pre += (rg^2),"A",1,"Adag",1
+    pre += dep,"I",1
+    for i=1:no_cavs
+        pre += (2*rg*g_f[i](t)),"A",1,"Adag",i+1
+        pre += (g_f[i](t)^2),"Adag",i+1,"A",i+1
+        for j=1:i-1
+            pre += (2*g_f[j](t)*g_f[i](t)),"Adag",i+1,"A",j+1
+        end
+    end
+    pre = -0.5 * MPO(pre, sites)
+    return pre
+end
+
+function post_term(sites, g_f, rg, dep, t)
+    no_cavs = length(sites) - 1
+    post = OpSum()
+    post += (rg^2),"A",1,"Adag",1
+    post += dep,"I",1
+    for i=1:no_cavs
+        post += (2*rg*g_f[i](t)),"Adag",1,"A",i+1
+        post += (g_f[i](t)^2),"Adag",i+1,"A",i+1
+        for j=i+1:no_cavs
+            post += (2*g_f[j](t)*g_f[i](t)),"Adag",i+1, "A",j+1
+        end
+    end
+    post = -0.5 * MPO(post, sites)
+    return post
+end
+
+function Lo(sites, g_f, rg, t)
+    no_cavs = length(sites) - 1
+    L_0 = OpSum()
+    L_0 += rg,"A",1
+    for i=2:no_cavs+1
+        L_0 += g_f[i-1](t),"A",i
+    end
+    L_0 = MPO(L_0, sites)
+    L_0d = swapprime(conj(deepcopy(L_0)), 1,0)
+    return L_0, L_0d
+end
+
+
+#func calc drho/dt
+function drho_test(rho, p, t)
+    #drho(sites, rho, t)
+    #(H_int * rho) + (rho * H_int) + sum(Ld rho L)
+    sites, gv_f, rg, deph = p
+    cut_off=1E-10
+    algo="naive"
+    no_cavs = length(sites) - 1
+
+
+    pre = pre_term(sites, gv_f, rg, deph, t)
+    post = post_term(sites, gv_f, rg, deph, t)
+    L_0, L_0d = Lo(sites, gv_f, rg, t)
+
+    pre_rho = apply(pre, rho; alg=algo, cutoff=cut_off)
+    post_rho = apply(rho, post; alg=algo, cutoff=cut_off)
+    
+    drho_ = pre_rho + post_rho
+    drho_ += apply(apply(L_0 , rho; alg=algo, cutoff=cut_off), L_0d; alg=algo, cutoff=cut_off)
+
+    if deph!= 0
+        L_1 = op("Sz",sites[1])
+        drho_ += deph*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
+    end
+
+    return drho_
+end
+
+function cash_karppe_evolve_test(no_cavs, depha, gamma, dt, t_final)
+    g_f = g2(gamma, depha, t_final, dt/2, no_cavs)
+
+    sys_sites = siteinds("Qudit", no_cavs+1, dim=3)
+    input_list = repeat(["Ground",],no_cavs+1)
+    input_list[1] = "Excite1"
+    sys = MPO(sys_sites, input_list)
+
+    t = 0.0
+    expect_list=[]
+    # t_list = [t,]
+
+    while t<t_final
+        sys_, dt_ = cash_karppe(sys, sys_sites, drho_test, t, dt; tol=1E-4, p_= (sys_sites, g_f, sqrt(gamma), depha), max_dt = dt*10)
         t += dt_
         sys = sys_/trace(sys_, sys_sites)
         push!(expect_list, ITensors.expect(sys, sys_sites))

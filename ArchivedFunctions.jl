@@ -255,14 +255,14 @@ end
 
 function trace(MPO_i, sites_i)
     tr_ = 1.0
-    for i in 1:length(sites_i)
+    for i in eachindex(sites_i)
         tr_ *= delta(sites_i[i], sites_i[i]') * MPO_i[i]
     end
     return tr_[1]
 end
 function ITensors.expect(MPO_i, sites_i)
     list_exp = []
-    for i in 1:length(sites_i)
+    for i in eachindex(sites_i)
         append!(list_exp, trace(apply( op("n", sites_i[i]), MPO_i), sites_i))
     end
     return list_exp
@@ -655,7 +655,7 @@ function cash_karppe(sys, sys_sites, d_rho, t, dt; tol=0.1, p_ = nothing, max_dt
     new_dt = dt * (tol/error)^0.2
     # new_dt > dt ? new_dt = dt : nothing
     # println(new_dt)
-    max_dt == nothing ? nothing : ((new_dt>max_dt) && (new_dt=max_dt; true) )
+    isnothing(max_dt) ? nothing : ((new_dt>max_dt) && (new_dt=max_dt; true) )
     ks_new = k_gen(sys, d_rho, t, new_dt, a, b, p=p_)
     # print(ks_new)
     better_sys = sys + sum(c.*ks_new)

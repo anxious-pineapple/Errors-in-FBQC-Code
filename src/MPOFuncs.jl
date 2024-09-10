@@ -1,12 +1,17 @@
 module MPOFuncs
 
-using ITensors, Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations
+using ITensors, Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations, SparseArrays
 export beamsplitter!, swap_nextsite!, swap_ij!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 # export ITensors, beamsplitter!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 
 
 ##### Defining States Needed #####
 #-------------------------------------------------------------------------
+
+#note: using sparse matrices seems liek it might be faster 
+#but most documentation says its not unless for super specefic cases that are probably not se relevant atm
+#eg 0.05% dense or something
+
 function ITensors.op(::OpName"Ground" , ::SiteType"Qudit" , d::Int)
     mat = zeros(d, d)
     mat[1,1] = 1
@@ -62,13 +67,84 @@ function n_copy_mpo(mpo_i, sites, n)
     return I_mpo, new_inds
 end
 
+# code to join two MPOs
+function join(mpo_1, sites1, mpo_2, sites2)
+    #Assuming qudit
+    #creates new mpo in order given in input
+    l1 = length(mpo_1)
+    l2 = length(mpo_2)
+
+    new_inds = siteinds("Qudit", l1+l2, dim=dim(sites1[1]))
+    I_mpo = MPO(l1+l2)
+
+    I_op = OpSum()
+    I_op += "I",l1,"I",(l1+1)
+    I_op = MPO(I_op, new_inds)
+
+    for i=1:max(l1,l2)
+        if (i > l1)
+            I_mpo[l1+i] = deepcopy(mpo_2[i])
+            replaceind!(I_mpo[l1+i], sites2[i], new_inds[l1+i])
+            replaceind!(I_mpo[l1+i], sites2[i]', new_inds[l1+i]')
+        elseif (i > l2)
+            I_mpo[i] = deepcopy(mpo_1[i])
+            replaceind!(I_mpo[i], sites1[i], new_inds[i])
+            replaceind!(I_mpo[i], sites1[i]', new_inds[i]')
+        else
+            I_mpo[i] = deepcopy(mpo_1[i])
+            I_mpo[l1+i] = deepcopy(mpo_2[i])
+            replaceind!(I_mpo[i], sites1[i], new_inds[i])
+            replaceind!(I_mpo[i], sites1[i]', new_inds[i]')
+            replaceind!(I_mpo[l1+i], sites2[i], new_inds[l1+i])
+            replaceind!(I_mpo[l1+i], sites2[i]', new_inds[l1+i]')
+        end
+    end
+
+    #applying I to change up link indices
+    I_mpo = apply(I_op, I_mpo)
+    truncate!(I_mpo; cutoff= 1e-10)
+
+    return I_mpo, new_inds
+end
+
 ##### Defining operations on the MPO #####
 #-------------------------------------------------------------------------
 function beamsplitter!(MPO_i, site_list, index_1, index_2)
+
     cutoff = 1E-10
-    
     op_1 = ((op("A",site_list[index_1]) * op("Adag",site_list[index_2])) + (op("A",site_list[index_2]) * op("Adag",site_list[index_1])))
     H_ = exp((-im/4) * pi * op_1)
+    # for i=1:length(site_list)
+    #     (i==index_1 || i==index_2) ? nothing : H_*= op("I",site_list[i])
+    # end
+    # H_ = denseblocks(H_)
+    @show H_
+    Iden = MPO(site_list, "I")
+    H_ = apply(H_, Iden)
+    H2 = apply(H_, MPO_i; cutoff=cutoff)
+    #easier to use apply since preserves MPO data type and doesnt change to iTensor type
+    #requires iTensor be applied to an MPO in that order particularly hence double dagger
+    H3 = apply(H2, swapprime(conj(H_), 1,0); cutoff=cutoff)
+
+    MPO_i[:] = H3
+    # MPO_i /= trace(MPO_i, site_list)
+    # return nothing
+end
+
+function beamsplitter_test1!(MPO_i, site_list, index_1, index_2)
+    cutoff = 1E-10
+    
+    op_1 = OpSum()
+    op_1 += 1,"A",index_1,"Adag",index_2
+    op_1 += 1,"A",index_2,"Adag",index_1
+    # op_1 += ((op("A",site_list[index_1]) * op("Adag",site_list[index_2])) + (op("A",site_list[index_2]) * op("Adag",site_list[index_1])))
+    
+    
+    H_ = MPO(op_1, site_list; cutoff=cutoff)
+    @show H_
+   
+    @show H_
+    # H_ = exp((-im/4) * pi * op_1)
     # for i=1:length(site_list)
     #     (i==index_1 || i==index_2) ? nothing : H_*= op("I",site_list[i])
     # end
@@ -80,7 +156,7 @@ function beamsplitter!(MPO_i, site_list, index_1, index_2)
     H3 = apply(H2, swapprime(conj(H_), 1,0); cutoff=cutoff)
 
     MPO_i[:] = H3
-    MPO_i /= trace(MPO_i, site_list)
+    # MPO_i /= trace(MPO_i, site_list)
     # return nothing
 end
 
@@ -411,7 +487,10 @@ function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false)
         gᵥ(t) = - conj(vᵢⁱ⁻¹(i,t))/cum_int_extrap(t)
         push!(gv_f, gᵥ)
     end
-    return gv_f
+    # usual
+    # return gv_f
+    # only for test
+    return gv_f, eigenvals
 end
 
 #returns weighted d rho acc some adaptive step algo by cash and karp with fifth order RK4
@@ -472,7 +551,7 @@ function cash_karppe_evolve(no_cavs, depha, gamma, dt, t_final)
         sys_, dt_ = cash_karppe(sys, sys_sites, drho, t, dt; tol=1E-4, p_= (sys_sites, g_f, sqrt(gamma), depha), max_dt = dt*10)
         t += dt_
         sys = sys_/trace(sys_, sys_sites)
-        push!(expect_list, ITensors.expect(sys, sys_sites))
+        # push!(expect_list, ITensors.expect(sys, sys_sites))
         # push!(t_list, t)
     end
 
@@ -483,20 +562,32 @@ function cash_karppe_evolve(no_cavs, depha, gamma, dt, t_final)
     end
     copy_sys /= trace(copy_sys, sys_sites[2:end])
 
-    return copy_sys, sys_sites[2:end], expect_list
+    return copy_sys, sys_sites[2:end]
+    # , expect_list
     # , t_list
 end
 
 ###########################################################
 #test area 
 
-cda = [;]
-cad = [;]
-ada = [;]
-ada_pre = Dict()
-ada_post = Dict()
+# cda = [;]
+# cad = [;]
+# ada = [;]
+# ada_pre = Dict()
+# ada_post = Dict()
 
-function init(sites,rg)
+# function init_0(cda, cad, ada, ada_pre, ada_post)
+#     cda = [;]
+#     cad = [;]
+#     ada = [;]
+#     ada_pre = Dict()
+#     ada_post = Dict()
+
+#     return cda, cad, ada, ada_pre, ada_post
+# end
+
+function init(par_list, sites, rg)
+    cda, cad, ada, ada_pre, ada_post = par_list
     no_cavs = length(sites) - 1
     for i=1:no_cavs
         term_cda = OpSum()
@@ -518,9 +609,12 @@ function init(sites,rg)
             ada_post[(j,i)] = MPO(term_post, sites)
         end
     end
+    par_list = [cda, cad, ada, ada_pre, ada_post]
+    return par_list
 end
 
-function pre_term2(sites, g_f, dep, t)
+function pre_term2(par_list, sites, g_f, rg, dep, t)
+    cda, cad, ada, ada_pre, ada_post = par_list
     no_cavs = length(sites) - 1
     pre = OpSum()
     pre += dep,"I",1
@@ -536,7 +630,8 @@ function pre_term2(sites, g_f, dep, t)
     return (-0.5 * pre)
 end
 
-function post_term2(sites, g_f, dep, t)
+function post_term2(par_list, sites, g_f, rg, dep, t)
+    cda, cad, ada, ada_pre, ada_post = par_list
     no_cavs = length(sites) - 1
     post = OpSum()
     post += dep,"I",1
@@ -545,13 +640,86 @@ function post_term2(sites, g_f, dep, t)
     for i=1:no_cavs
         post += cda[i] * 2 * g_f[i](t)
         post += ada[i] * g_f[i](t)^2
-        for j=i+1:no_cavs
+        for j=1:i-1
             post += ada_post[(j,i)] * 2 * g_f[j](t) * g_f[i](t)
         end
     end
     return (-0.5 * post)    
 end
 
+#func calc drho/dt
+function drho_test2(rho, p, t)
+    #drho(sites, rho, t)
+    #(H_int * rho) + (rho * H_int) + sum(Ld rho L)
+    par_list, sites, gv_f, rg, deph = p
+    cut_off=1E-10
+    algo="naive"
+    no_cavs = length(sites) - 1
+
+
+    pre = pre_term2(par_list, sites, gv_f, rg, deph, t)
+    post = post_term2(par_list, sites, gv_f, rg, deph, t)
+    L_0, L_0d = Lo(sites, gv_f, rg, t)
+
+    pre_rho = apply(pre, rho; alg=algo, cutoff=cut_off)
+    post_rho = apply(rho, post; alg=algo, cutoff=cut_off)
+    
+    drho_ = pre_rho + post_rho
+    drho_ += apply(apply(L_0 , rho; alg=algo, cutoff=cut_off), L_0d; alg=algo, cutoff=cut_off)
+
+    if deph!= 0
+        L_1 = op("Sz",sites[1])
+        drho_ += deph*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
+    end
+
+    return drho_
+end 
+
+function cash_karppe_evolve_test2(no_cavs, depha, gamma, dt, t_final)
+
+    cda = [;]
+    cad = [;]
+    ada = [;]
+    ada_pre = Dict()
+    ada_post = Dict()
+
+    par_list = [cda, cad, ada, ada_pre, ada_post]
+    # cda, cad, ada, ada_pre, ada_post = init_0(cda, cad, ada, ada_pre, ada_post)
+
+    println(length(cda))
+
+    g_f = g2(gamma, depha, t_final, dt/2, no_cavs)
+
+    sys_sites = siteinds("Qudit", no_cavs+1, dim=3)
+    input_list = repeat(["Ground",],no_cavs+1)
+    input_list[1] = "Excite1"
+    sys = MPO(sys_sites, input_list)
+
+    t = 0.0
+    expect_list=[]
+    # t_list = [t,]
+    par_list = init(par_list, sys_sites, gamma^0.5)
+    println(length(cda))
+    while t<t_final
+        sys_, dt_ = cash_karppe(sys, sys_sites, drho_test2, t, dt; tol=1E-4, p_= (par_list, sys_sites, g_f, sqrt(gamma), depha), max_dt = dt*10)
+        t += dt_
+        sys = sys_/trace(sys_, sys_sites)
+        push!(expect_list, ITensors.expect(sys, sys_sites))
+        # push!(t_list, t)
+    end
+
+    copy_sys = MPO(no_cavs)
+    copy_sys[1] = sys[1] * delta(sys_sites[1], sys_sites[1]') * sys[2]
+    for i=2:no_cavs
+        copy_sys[i] = deepcopy(sys[i+1]) 
+    end
+    copy_sys /= trace(copy_sys, sys_sites[2:end])
+
+    return copy_sys, sys_sites[2:end], expect_list
+    # , t_list
+end
+
+##############################################################################
 
 function pre_term(sites, g_f, rg, dep, t)
     no_cavs = length(sites) - 1
@@ -627,7 +795,7 @@ function drho_test(rho, p, t)
 end
 
 function cash_karppe_evolve_test(no_cavs, depha, gamma, dt, t_final)
-    g_f = g2(gamma, depha, t_final, dt/2, no_cavs)
+    g_f, eigenvals = g2(gamma, depha, t_final, dt/5, no_cavs)
 
     sys_sites = siteinds("Qudit", no_cavs+1, dim=3)
     input_list = repeat(["Ground",],no_cavs+1)
@@ -642,7 +810,7 @@ function cash_karppe_evolve_test(no_cavs, depha, gamma, dt, t_final)
         sys_, dt_ = cash_karppe(sys, sys_sites, drho_test, t, dt; tol=1E-4, p_= (sys_sites, g_f, sqrt(gamma), depha), max_dt = dt*10)
         t += dt_
         sys = sys_/trace(sys_, sys_sites)
-        push!(expect_list, ITensors.expect(sys, sys_sites))
+        # push!(expect_list, ITensors.expect(sys, sys_sites))
         # push!(t_list, t)
     end
 
@@ -653,7 +821,7 @@ function cash_karppe_evolve_test(no_cavs, depha, gamma, dt, t_final)
     end
     copy_sys /= trace(copy_sys, sys_sites[2:end])
 
-    return copy_sys, sys_sites[2:end], expect_list
+    return copy_sys, sys_sites[2:end], eigenvals
     # , t_list
 end
 

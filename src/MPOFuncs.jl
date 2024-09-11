@@ -109,8 +109,18 @@ end
 
 ##### Defining operations on the MPO #####
 #-------------------------------------------------------------------------
-function beamsplitter!(MPO_i, site_list, index_1, index_2)
 
+# notes for beamsplitter application 
+# 1. Cannot exponentiate OpSum
+# 2. Cannot apply unequal length MPOs to each other
+# 3. making Itensor then multiplying to Identity MPO then applying works, 
+#    but slower than just applying Itensor directly
+
+
+
+
+function beamsplitter!(MPO_i, site_list, index_1, index_2)
+# more relvant for sites not next to each other
     cutoff = 1E-10
     op_1 = ((op("A",site_list[index_1]) * op("Adag",site_list[index_2])) + (op("A",site_list[index_2]) * op("Adag",site_list[index_1])))
     H_ = exp((-im/4) * pi * op_1)
@@ -118,38 +128,11 @@ function beamsplitter!(MPO_i, site_list, index_1, index_2)
     #     (i==index_1 || i==index_2) ? nothing : H_*= op("I",site_list[i])
     # end
     # H_ = denseblocks(H_)
-    @show H_
+    # @show H_
     Iden = MPO(site_list, "I")
-    H_ = apply(H_, Iden)
-    H2 = apply(H_, MPO_i; cutoff=cutoff)
-    #easier to use apply since preserves MPO data type and doesnt change to iTensor type
-    #requires iTensor be applied to an MPO in that order particularly hence double dagger
-    H3 = apply(H2, swapprime(conj(H_), 1,0); cutoff=cutoff)
-
-    MPO_i[:] = H3
-    # MPO_i /= trace(MPO_i, site_list)
-    # return nothing
-end
-
-function beamsplitter_test1!(MPO_i, site_list, index_1, index_2)
-    cutoff = 1E-10
-    
-    op_1 = OpSum()
-    op_1 += 1,"A",index_1,"Adag",index_2
-    op_1 += 1,"A",index_2,"Adag",index_1
-    # op_1 += ((op("A",site_list[index_1]) * op("Adag",site_list[index_2])) + (op("A",site_list[index_2]) * op("Adag",site_list[index_1])))
-    
-    
-    H_ = MPO(op_1, site_list; cutoff=cutoff)
-    @show H_
-   
-    @show H_
-    # H_ = exp((-im/4) * pi * op_1)
-    # for i=1:length(site_list)
-    #     (i==index_1 || i==index_2) ? nothing : H_*= op("I",site_list[i])
-    # end
-    Iden = MPO(site_list, "I")
-    H_ = apply(H_, Iden)
+    H_ = apply(H_, Iden; cutoff=cutoff)
+    @show typeof(H_)
+    #above step is supposed to SVD the H_ to make it an MPO not itensor
     H2 = apply(H_, MPO_i; cutoff=cutoff)
     #easier to use apply since preserves MPO data type and doesnt change to iTensor type
     #requires iTensor be applied to an MPO in that order particularly hence double dagger
@@ -171,9 +154,61 @@ function beamsplitter_nextsite!(MPO_i, site_list, index_1)
     H3 = conj(swapprime( apply( H_, swapprime(conj(H2), 1,0); cutoff ), 1,0))
 
     MPO_i[:] = H3
-    MPO_i /= trace(MPO_i, site_list)
+    # MPO_i /= trace(MPO_i, site_list)
     # return nothing
 end
+
+function beamsplitter_peps_tensor(tens1, tens2, site1, site2)
+    # here applying itensor first, svd later
+    inds3 = uniqueinds(tens1, tens2)
+    bs_op = ((op("A",site1) * op("Adag",site2)) + (op("A",site2) * op("Adag",site1)))
+    bs_op = exp((-im/4) * pi * bs_op)
+    # bs_optop = replaceprime(bs_op, 1, 2)
+    mult_term = tens1 * tens2 * bs_op'
+    mult_term = replaceprime(mult_term, 2=>1)
+    # bs_opbottom = swapprime(bs_op, 0, 1)
+    mult_term = mult_term' * swapprime!(conj(bs_op) , 1, 0)
+    mult_term = replaceprime(mult_term, 2=>1)
+
+    q, r = qr(mult_term, inds3)
+    tens1_new = q
+    tens2_new = r
+    
+    inds4 = commoninds(tens1_new, tens2_new)
+    if length(inds4) > 1
+        comb_op = combiner(inds4)
+        tens1_new = tens1_new * comb_op
+        tens2_new = tens2_new * comb_op
+    end
+
+    return tens1_new, tens2_new
+end
+
+function beamsplitter_peps_svd(tens1, tens2, site1, site2)
+    # # here svd on beamsplitter first, then apply
+
+    inds3 = uniqueinds(tens1, tens2)
+    bs_op = ((op("A",site1) * op("Adag",site2)) + (op("A",site2) * op("Adag",site1)))
+    bs_op = exp((-im/4) * pi * bs_op)
+
+    q, r = qr(bs_op, (site1, site1'))
+    bs_op1 = q 
+    bs_op2 = r
+    
+    tens1_new = bs_op1' * tens1
+    tens1_new = replaceprime(tens1_new, 2=>1)
+    tens2_new = bs_op2' * tens2
+    tens2_new = replaceprime(tens2_new, 2=>1)
+
+    inds4 = commoninds(tens1_new, tens2_new)
+    comb_op = combiner(inds4)
+    tens1_new = tens1_new * comb_op
+    tens2_new = tens2_new * comb_op
+
+
+    return tens1_new, tens2_new
+end
+
 
 function swap_nextsite!(mpo_i, sites, i)
     #Function swaps the i-th and i+1-th sites in the mpo

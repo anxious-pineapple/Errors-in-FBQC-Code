@@ -1,6 +1,6 @@
 using ITensors, Integrals, BenchmarkTools, Plots, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations, Metal
 using Dates
-import MPOFuncs
+import .MPOFuncs
 using JLD2
 
 gamma = 1

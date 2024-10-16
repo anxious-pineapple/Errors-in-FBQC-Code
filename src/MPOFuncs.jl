@@ -120,7 +120,7 @@ end
 
 
 function beamsplitter!(MPO_i, site_list, index_1, index_2)
-# more relvant for sites not next to each other
+    # more relvant for sites not next to each other
     cutoff = 1E-10
     op_1 = ((op("A",site_list[index_1]) * op("Adag",site_list[index_2])) + (op("A",site_list[index_2]) * op("Adag",site_list[index_1])))
     H_ = exp((-im/4) * pi * op_1)
@@ -160,48 +160,90 @@ end
 
 function beamsplitter_peps_tensor(tens1, tens2, site1, site2)
     # here applying itensor first, svd later
+    #interlayer beamsplitter
     inds3 = uniqueinds(tens1, tens2)
+    # @show inds(tens1)
+    # @show inds(tens2)
+    # @show inds3
+    g = pi/((8)^0.5)
     bs_op = ((op("A",site1) * op("Adag",site2)) + (op("A",site2) * op("Adag",site1)))
-    bs_op = exp((-im/4) * pi * bs_op)
+    bs_op +=  ((op("I",site2)*op("N", site1)) - (op("N", site2)*op("I",site1)) )
+    bs_op += -(2)^0.5 * (op("I",site2)*(op("N", site1)) + (op("N", site2))*op("I",site1))
+    bs_op = exp((-im * g) * bs_op)
+
+    # bs_op = exp((-im/4) * pi * bs_op)
+    # bs_op2 = exp((im/4) * pi * bs_op)
     # bs_optop = replaceprime(bs_op, 1, 2)
-    mult_term = tens1 * tens2 * bs_op'
-    mult_term = replaceprime(mult_term, 2=>1)
-    # bs_opbottom = swapprime(bs_op, 0, 1)
-    mult_term = mult_term' * swapprime!(conj(bs_op) , 1, 0)
+    # @show inds(bs_op)
+    mult_term = tens1 * tens2
+    mult_term = bs_op' * mult_term
     mult_term = replaceprime(mult_term, 2=>1)
 
-    q, r = qr(mult_term, inds3)
-    tens1_new = q
-    tens2_new = r
-    
+    mult_term = mult_term' * swapprime(conj(bs_op), 1, 0)
+    mult_term = replaceprime(mult_term, 2=>1)
+    mult_term = swapprime(conj(mult_term), 1, 0)
+    # @show inds(mult_term)
+    u, s, v = svd(mult_term, inds3; cutoff=1E-8)
+    tens1_new = u
+    tens2_new = s*v
+    # @show inds(tens1_new)
+    # @show inds(tens2_new)
     inds4 = commoninds(tens1_new, tens2_new)
     if length(inds4) > 1
         comb_op = combiner(inds4)
         tens1_new = tens1_new * comb_op
         tens2_new = tens2_new * comb_op
+        println("hi")
     end
 
     return tens1_new, tens2_new
 end
 
+function excite_site(tens1, site1)
+    a_op = op("Adag",site1)
+    mult_term = tens1 * a_op'
+    @show mult_term
+    mult_term = replaceprime(mult_term, 2=>1)
+
+    mult_term = mult_term' * swapprime(conj(op("Adag", site1)), 1, 0)
+    @show mult_term
+    mult_term = replaceprime(mult_term, 2=>1)
+    @show "Chak de"
+    return mult_term
+end
+
+
 function beamsplitter_peps_svd(tens1, tens2, site1, site2)
     # # here svd on beamsplitter first, then apply
 
-    inds3 = uniqueinds(tens1, tens2)
+    # inds3 = uniqueinds(tens1, tens2)
     bs_op = ((op("A",site1) * op("Adag",site2)) + (op("A",site2) * op("Adag",site1)))
     bs_op = exp((-im/4) * pi * bs_op)
 
     q, r = qr(bs_op, (site1, site1'))
     bs_op1 = q 
     bs_op2 = r
-    
+    @show q
+    @show r
+
+
     tens1_new = bs_op1' * tens1
+    tens1_new = replaceprime(tens1_new, 2=>1)
+    tens1_new = tens1_new' * swapprime(conj(bs_op1), 1,0)
     tens1_new = replaceprime(tens1_new, 2=>1)
     tens2_new = bs_op2' * tens2
     tens2_new = replaceprime(tens2_new, 2=>1)
+    tens2_new = tens2_new' * swapprime(conj(bs_op2), 1,0)
+    tens2_new = replaceprime(tens2_new, 2=>1)
+
+    @show tens1_new
+    @show tens2_new
 
     inds4 = commoninds(tens1_new, tens2_new)
     comb_op = combiner(inds4)
+
+    @show comb_op
+
     tens1_new = tens1_new * comb_op
     tens2_new = tens2_new * comb_op
 
@@ -232,7 +274,7 @@ function swap_nextsite!(mpo_i, sites, i)
 end
 
 function swap_ij!(mpo_i, sites, i, j)
-# Assuming j > i and both in length
+    # Assuming j > i and both in length
 
     # for k=i:j-1
     #     swap_nextsite!(mpo_i, sites, k)
@@ -602,24 +644,26 @@ function cash_karppe_evolve(no_cavs, depha, gamma, dt, t_final)
     # , t_list
 end
 
-###########################################################
-#test area 
+#
+    ###########################################################
+    #test area 
 
-# cda = [;]
-# cad = [;]
-# ada = [;]
-# ada_pre = Dict()
-# ada_post = Dict()
+    # cda = [;]
+    # cad = [;]
+    # ada = [;]
+    # ada_pre = Dict()
+    # ada_post = Dict()
 
-# function init_0(cda, cad, ada, ada_pre, ada_post)
-#     cda = [;]
-#     cad = [;]
-#     ada = [;]
-#     ada_pre = Dict()
-#     ada_post = Dict()
+    # function init_0(cda, cad, ada, ada_pre, ada_post)
+    #     cda = [;]
+    #     cad = [;]
+    #     ada = [;]
+    #     ada_pre = Dict()
+    #     ada_post = Dict()
 
-#     return cda, cad, ada, ada_pre, ada_post
-# end
+    #     return cda, cad, ada, ada_pre, ada_post
+    # end
+#
 
 function init(par_list, sites, rg)
     cda, cad, ada, ada_pre, ada_post = par_list
@@ -799,7 +843,6 @@ function Lo(sites, g_f, rg, t)
     L_0d = swapprime(conj(deepcopy(L_0)), 1,0)
     return L_0, L_0d
 end
-
 
 #func calc drho/dt
 function drho_test(rho, p, t)

@@ -1,10 +1,10 @@
 import ITensors
-using MPOFuncs
+using .MPOFuncs
 using BenchmarkTools
 
 
 gamma = 1
-no_cavs = 10
+no_cavs = 2
 dt = 0.01
 t_final = 10
 dep = 0.002

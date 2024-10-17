@@ -416,7 +416,7 @@ function trace(MPO_i, sites_i)
     return tr_[1]
 end
 
-function ITensors.expect(MPO_i, sites_i)
+function expect(MPO_i, sites_i)
     list_exp = []
     for i in eachindex(sites_i)
         append!(list_exp, trace(apply( op("n", sites_i[i]), MPO_i), sites_i))
@@ -553,6 +553,7 @@ function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false)
         for t=dt:dt:t_fin;
             f(u, p) =  conj(vᵢⁱ⁻¹(p, u)) * vᵢⁱ⁻¹(p, u)
             domain = (t-dt, t) # (lb, ub)
+            
             prob = IntegralProblem(f, domain, i)
             sol = solve(prob, HCubatureJL(); reltol = 1e-3, abstol = 1e-3)
             push!(cum_int_list, cum_int_list[end]+sol.u)

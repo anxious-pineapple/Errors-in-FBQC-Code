@@ -5,10 +5,10 @@ using BenchmarkTools
 using JLD2
 
 gamma = 1.0
-no_cavs = 10
+no_cavs = 2
 dt = 0.01
 t_final = 10.0
-dep = 0.0
+dep = 0.02
 
 prob_list = [;]
 fidel_list = [;]
@@ -306,52 +306,99 @@ function stabalizer_gen(site_array)
 end
 
 
-for dep in [0.02, ]
-    println("dep is  ",dep)
-    mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
-    # sites_i = ITensors.siteinds("Qudit", no_cavs; dim=5)
-    # input_list = repeat(["Ground",],no_cavs)
-    # input_list[1] = "Excite1" 
-    # mpo_i = MPO(sites_i, input_list)
-    signal_mpo, signal_sites = MPOFuncs.n_copy_mpo(mpo_i, sites_i, 4)
-    # below bloack rearranges MPO to keep all similar modes together
-    # in essence we only have to deal with 4 sites of a mode at a time
-    for i=4:-1:1
-        for j=no_cavs:-1:1
-            signal_mpo = MPOFuncs.swap_ij!(signal_mpo, signal_sites, (no_cavs*(i-1))+j, (no_cavs*(i-1))+j + ((4-i)*(j-1)))
-        end
+# g2(gamma, dep, t_final, dt, no_cavs; reverse=false)
+
+# for dep in [0.02, ]
+println("dep is  ",dep)
+mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
+# sites_i = ITensors.siteinds("Qudit", no_cavs; dim=5)
+# input_list = repeat(["Ground",],no_cavs)
+# input_list[1] = "Excite1" 
+# mpo_i = MPO(sites_i, input_list)
+signal_mpo, signal_sites = MPOFuncs.n_copy_mpo(mpo_i, sites_i, 4)
+# below bloack rearranges MPO to keep all similar modes together
+# in essence we only have to deal with 4 sites of a mode at a time
+for i=4:-1:1
+    for j=no_cavs:-1:1
+        signal_mpo = MPOFuncs.swap_ij!(signal_mpo, signal_sites, (no_cavs*(i-1))+j, (no_cavs*(i-1))+j + ((4-i)*(j-1)))
     end
-    ancilla_sites = siteinds("Qudit", length(signal_mpo), dim=5)
-    ancilla_mpo = MPO(ancilla_sites, repeat(["Ground",],length(signal_mpo)))
-
-    peps, peps_sites = peps_zipper(signal_mpo, ancilla_mpo, signal_sites, ancilla_sites)
-    println("peps state 0")
-    # peps_expect(peps, peps_sites)
-    # peps_trace(peps, peps_sites)
-
-    # Below block applies beamsplitter across signal and ancilla sites
-    for i=1:length(signal_mpo)
-        peps[1,i] , peps[2,i] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i], peps[2,i], peps_sites[1,i], peps_sites[2,i])
-    end
-
-    #Below block applies the fourway beamsplitter
-    for i=0:no_cavs-1
-        println(i)
-        i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
-        beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
-        beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
-        beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1,i3)
-        beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
-    end
-    println("peps state 1")
-    # add project out layer 2 on particular MPO
-    detect_mpo = detect_1100_anymode(peps_sites[2,:])
-    peps_project_out!(peps, peps_sites, detect_mpo, 2)
-
-    println("peps state end")
-    jldsave("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps)
-    jldsave("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps_sites)
 end
+ancilla_sites = siteinds("Qudit", length(signal_mpo), dim=5)
+ancilla_mpo = MPO(ancilla_sites, repeat(["Ground",],length(signal_mpo)))
+
+peps, peps_sites = peps_zipper(signal_mpo, ancilla_mpo, signal_sites, ancilla_sites)
+println("peps state 0")
+
+detect_mpo = detect_1100_anymode(peps_sites[2,:])
+comb3 = 1
+
+i = 0
+# for i in [0,]
+
+i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
+for j=1:4
+    peps[1,4i+j] , peps[2,4i + j] = MPOFuncs.beamsplitter_peps_tensor(peps[1,4i+j] , peps[2,4i + j], peps_sites[1,4i+j], peps_sites[2,4i+j])
+end
+
+beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
+beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
+beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1,i3)
+beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
+
+# comb3 = 1
+for j=1:4
+    ind = 4i + j
+    a = peps[2,ind] * detect_mpo[ind] 
+    a *= comb3
+    if j==1
+        nothing
+    elseif j==4
+        nothing
+    else
+        comb3_1 = commonind(a, peps[2,ind+1])
+        comb3_2 = commonind(a, detect_mpo[ind+1])
+        comb3 = combiner([comb3_1, comb3_2])
+        a *= comb3
+    end
+    peps[2,ind] = a
+end
+
+# finding optimal THEN contract vs JUST contract ?????
+# sequ = ITensors.optimal_contraction_sequence([peps_array[1,i1:i4];peps_array[2,i1:i4]])
+block = contract([peps[1,i1:i4];peps[2,i1:i4]])  
+
+    # jldsave("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i+1)) * ".jld2" ; peps)
+
+# end
+
+
+block
+
+peps[1,2]
+block = contract([peps[1,i1:i4];peps[2,i1:i4]]) 
+    # # Below block applies beamsplitter across signal and ancilla sites
+    # for i=1:length(signal_mpo)
+    #     peps[1,i] , peps[2,i] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i], peps[2,i], peps_sites[1,i], peps_sites[2,i])
+    # end
+
+    # #Below block applies the fourway beamsplitter
+    # for i=0:no_cavs-1
+    #     println(i)
+    #     i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
+    #     beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
+    #     beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
+    #     beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1,i3)
+    #     beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
+    # end
+    # println("peps state 1")
+    # # add project out layer 2 on particular MPO
+    # detect_mpo = detect_1100_anymode(peps_sites[2,:])
+    # peps_project_out!(peps, peps_sites, detect_mpo, 2)
+
+    # println("peps state end")
+    # jldsave("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps)
+jldsave("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps_sites)
+# end
 
 #comment 
     # peps_copy = deepcopy(peps)

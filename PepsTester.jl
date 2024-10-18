@@ -5,7 +5,7 @@ using BenchmarkTools
 using JLD2
 
 gamma = 1.0
-no_cavs = 2
+no_cavs = 10
 dt = 0.01
 t_final = 10.0
 dep = 0.02
@@ -17,7 +17,7 @@ stabzz_list = [;]
 
 function peps_expect(peps_array, peps_sites)
     # here assuming list, to write for whole array
-    exp_array = Array{Float64}(undef, size(peps))
+    exp_array = Array{Float64}(undef, size(peps_array))
     for i in eachindex(peps_sites)
         println(i)
         peps_deep = deepcopy(peps_array)
@@ -47,7 +47,7 @@ function peps_flatten!(peps_array, peps_sites; layer=1)
     #with the assumption its only a 2 layer peps
     # if not layer 1 or 2 , flatten peps for both layers
 
-    len = length(peps_sites[1,:])
+    len = length(peps_array[1,:])
     if layer in [1,2]
         for i=1:len-1
             ind4 = commoninds(peps_array[layer,i], peps_array[layer,i+1])
@@ -125,7 +125,14 @@ function beamsplitter_peps_tensor_linear!(peps, peps_sites, layer, site_i, site_
         peps[layer, i] = replaceprime(temp_tens, 2=>1)
     # commoninds(peps[layer, 1], peps[layer, 2])
     end
-    peps_flatten!(peps, peps_sites; layer=layer)
+
+
+    # peps_flatten!(peps, peps_sites; layer=layer)
+
+    comb = combiner(commoninds(peps[layer, site_i], peps[layer, site_j]))
+    peps[layer,site_i] *= comb
+    peps[layer,site_j] *= comb
+
     return nothing
 end
 
@@ -146,7 +153,8 @@ function beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, layer, site_i, si
     # bs_op = exp((-im/4) * pi * bs_op)
 
     i = site_i
-    inds3 = uniqueinds(peps[layer, i], peps[layer, site_j])
+    # inds3 = uniqueinds(peps[layer, i], peps[layer, site_j])
+    inds3 = [peps_sites[layer, site_i], peps_sites[layer, site_i]']
     # i == site_i ? nothing : setdiff!(inds3, commoninds(peps[layer, i], peps[layer, i-1]))
     # i == site_i ? nothing : append!(inds3 , commoninds(bs_list[end], bs_op))
     u,s,v = svd(bs_op, inds3 ; cutoff = 1e-5)
@@ -320,6 +328,7 @@ signal_mpo, signal_sites = MPOFuncs.n_copy_mpo(mpo_i, sites_i, 4)
 # in essence we only have to deal with 4 sites of a mode at a time
 for i=4:-1:1
     for j=no_cavs:-1:1
+        println(i,j)
         signal_mpo = MPOFuncs.swap_ij!(signal_mpo, signal_sites, (no_cavs*(i-1))+j, (no_cavs*(i-1))+j + ((4-i)*(j-1)))
     end
 end
@@ -332,47 +341,108 @@ println("peps state 0")
 detect_mpo = detect_1100_anymode(peps_sites[2,:])
 comb3 = 1
 
-i = 0
-# for i in [0,]
+jldsave("Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps_sites)
 
-i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
-for j=1:4
-    peps[1,4i+j] , peps[2,4i + j] = MPOFuncs.beamsplitter_peps_tensor(peps[1,4i+j] , peps[2,4i + j], peps_sites[1,4i+j], peps_sites[2,4i+j])
-end
+# i = 0:
+for i=0:no_cavs-1
 
-beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
-beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
-beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1,i3)
-beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
+    ti = time()
+    println("at cav no ", i+1)
 
-# comb3 = 1
-for j=1:4
-    ind = 4i + j
-    a = peps[2,ind] * detect_mpo[ind] 
-    a *= comb3
-    if j==1
-        nothing
-    elseif j==4
-        nothing
-    else
-        comb3_1 = commonind(a, peps[2,ind+1])
-        comb3_2 = commonind(a, detect_mpo[ind+1])
-        comb3 = combiner([comb3_1, comb3_2])
+    i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
+    println(i1, i2, i3, i4)
+    # peps_subblock = hcat(peps[1,i1:i4], peps[2,i1:i4])
+    # peps_subblock = transpose(peps_subblock)
+
+    # peps_sitesub = Array{Any}(undef, 2, 4)
+    # peps_sitesub[1,:] = peps_sites[1,i1:i4]
+    # peps_sitesub[2,:] = peps_sites[2,i1:i4]
+    # peps_sitesub = hcat(peps_sites[1,i1:i4], peps_sites[2,i1:i4])
+    # peps_sitesub = transpose(peps_sitesub)
+
+    # for j=1:4
+    #     peps[1,i1] , peps[2,i2] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i1] , peps[2,i2], peps_sites[1,i1], peps_sites[2,i2])
+    # end
+    peps[1,i1] , peps[2,i1] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i1] , peps[2,i1], peps_sites[1,i1], peps_sites[2,i1])
+    peps[1,i2] , peps[2,i2] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i2] , peps[2,i2], peps_sites[1,i2], peps_sites[2,i2])
+    peps[1,i3] , peps[2,i3] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i3] , peps[2,i3], peps_sites[1,i3], peps_sites[2,i3])
+    peps[1,i4] , peps[2,i4] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i4] , peps[2,i4], peps_sites[1,i4], peps_sites[2,i4])
+
+    beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
+    beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
+    #below  two causing issue idk why
+    beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1, i3)
+    beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
+
+    println("peps state 1 | time ", time()-ti)
+    ti = time()
+    # comb3 = 1
+    for j=1:4
+        ind = 4i + j
+        a = peps[2,ind] * detect_mpo[ind] 
         a *= comb3
+        if ind==(no_cavs*4)
+            nothing
+        else
+            comb3_1 = commonind(a, peps[2,ind+1])
+            comb3_2 = commonind(a, detect_mpo[ind+1])
+            comb3 = combiner([comb3_1, comb3_2])
+            a *= comb3
+        end
+        peps[2,ind] = a
     end
-    peps[2,ind] = a
+
+    # # peps[2,2]
+    println("peps state 2 | time ", time()-ti)
+    ti = time()
+
+    # # finding optimal THEN contract vs JUST contract ?????
+    sequ = ITensors.optimal_contraction_sequence(peps[2,i1:i4])
+    block = contract(peps[2,i1:i4]; sequence = sequ)  
+    # peps_top = peps_subblock[1,i1:i4]   
+    
+    println("peps state 3 | time ", time()-ti)
+
+
+    
+    save("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i+1)) * ".jld2" , "peps_top", peps[1,i1:i4], "bottom", block)
+    # save("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i+1)) * ".jld2" , "bottom", block)
+    
+    for loc in [i1,i2,i3,i4]
+        peps[1,loc] = ITensor(0)
+        peps[2,loc] = ITensor(0)
+    end
+
 end
 
-# finding optimal THEN contract vs JUST contract ?????
-# sequ = ITensors.optimal_contraction_sequence([peps_array[1,i1:i4];peps_array[2,i1:i4]])
-block = contract([peps[1,i1:i4];peps[2,i1:i4]])  
 
-    # jldsave("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i+1)) * ".jld2" ; peps)
+trace_val = 1.0
+for i=1:no_cavs
 
-# end
+    f = jldopen("Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
+    peps_sites = f["peps_sites"]
+    close(f)
+    peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+    # peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2", "peps_top")
+    for j=1:4
+        peps_top[j] *= delta(peps_sites[1, 4*(i-1)+j], peps_sites[1, 4*(i-1)+j]')
+    end
+    # bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+    bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+    sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+    block = contract([peps_top ; bottom]; sequence=sequ)
+
+    println("block ", inds(block))
+    trace_val *= block
+
+end
+
+trace_val[1]
 
 
-block
+
+
+
 
 peps[1,2]
 block = contract([peps[1,i1:i4];peps[2,i1:i4]]) 
@@ -563,3 +633,18 @@ sum(eigenvals)
 ex = expect(mpo_i, sites_i)
 
 1-sum(ex)
+
+
+
+
+list_test = [1:5;]
+
+
+for i=1:1
+    block = list_test[2:2+i]
+    println(block)
+    block = block .+ 1
+    println(block)
+    println(list_test)
+end
+println(list_test)

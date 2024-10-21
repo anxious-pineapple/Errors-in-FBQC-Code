@@ -10,10 +10,17 @@ dt = 0.01
 t_final = 10.0
 dep = 0.02
 
-prob_list = [;]
-fidel_list = [;]
-stabxx_list = [;]
-stabzz_list = [;]
+prob_list = Dict()
+fidel_list = Dict()
+stabxx_list = Dict()
+stabzz_list = Dict()
+# err_IX_list = Dict()
+# err_XI_list = Dict()
+# err_IZ_list = Dict()
+# err_ZI_list = Dict()
+# err_XZ_list = Dict()
+# err_ZX_list = Dict()
+
 
 function peps_expect(peps_array, peps_sites)
     # here assuming list, to write for whole array
@@ -343,7 +350,6 @@ comb3 = 1
 
 jldsave("Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps_sites)
 
-# i = 0:
 for i=0:no_cavs-1
 
     ti = time()
@@ -351,18 +357,7 @@ for i=0:no_cavs-1
 
     i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
     println(i1, i2, i3, i4)
-    # peps_subblock = hcat(peps[1,i1:i4], peps[2,i1:i4])
-    # peps_subblock = transpose(peps_subblock)
 
-    # peps_sitesub = Array{Any}(undef, 2, 4)
-    # peps_sitesub[1,:] = peps_sites[1,i1:i4]
-    # peps_sitesub[2,:] = peps_sites[2,i1:i4]
-    # peps_sitesub = hcat(peps_sites[1,i1:i4], peps_sites[2,i1:i4])
-    # peps_sitesub = transpose(peps_sitesub)
-
-    # for j=1:4
-    #     peps[1,i1] , peps[2,i2] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i1] , peps[2,i2], peps_sites[1,i1], peps_sites[2,i2])
-    # end
     peps[1,i1] , peps[2,i1] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i1] , peps[2,i1], peps_sites[1,i1], peps_sites[2,i1])
     peps[1,i2] , peps[2,i2] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i2] , peps[2,i2], peps_sites[1,i2], peps_sites[2,i2])
     peps[1,i3] , peps[2,i3] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i3] , peps[2,i3], peps_sites[1,i3], peps_sites[2,i3])
@@ -370,7 +365,6 @@ for i=0:no_cavs-1
 
     beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
     beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
-    #below  two causing issue idk why
     beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1, i3)
     beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
 
@@ -417,11 +411,10 @@ end
 
 
 trace_val = 1.0
+f = jldopen("Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
+peps_sites = f["peps_sites"]
+close(f)
 for i=1:no_cavs
-
-    f = jldopen("Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps_sites = f["peps_sites"]
-    close(f)
     peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
     # peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2", "peps_top")
     for j=1:4
@@ -436,178 +429,76 @@ for i=1:no_cavs
     trace_val *= block
 
 end
+prob_list[dep] = trace_val[1]
 
-trace_val[1]
-
-
-
-
-
-
-peps[1,2]
-block = contract([peps[1,i1:i4];peps[2,i1:i4]]) 
-    # # Below block applies beamsplitter across signal and ancilla sites
-    # for i=1:length(signal_mpo)
-    #     peps[1,i] , peps[2,i] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i], peps[2,i], peps_sites[1,i], peps_sites[2,i])
-    # end
-
-    # #Below block applies the fourway beamsplitter
-    # for i=0:no_cavs-1
-    #     println(i)
-    #     i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
-    #     beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
-    #     beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
-    #     beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1,i3)
-    #     beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
-    # end
-    # println("peps state 1")
-    # # add project out layer 2 on particular MPO
-    # detect_mpo = detect_1100_anymode(peps_sites[2,:])
-    # peps_project_out!(peps, peps_sites, detect_mpo, 2)
-
-    # println("peps state end")
-    # jldsave("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps)
-jldsave("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps_sites)
-# end
-
-#comment 
-    # peps_copy = deepcopy(peps)
-    # peps_project_out!(peps_copy, peps_sites, 0, 1)
-    # probab_after_detec = peps_trace_mum(peps_copy)[1]
-    # push!(prob_list, probab_after_detec)
-
-    # peps_copy = deepcopy(peps)
-    # ideal_bell_mpo = ideal_bell(peps_sites[1,:])
-    # peps_project_out!(peps_copy, peps_sites, ideal_bell_mpo, 1)
-    # fidel = (peps_trace_mum(peps_copy)[1])/probab_after_detec
-    # push!(fidel_list, fidel)
-
-    # stabxx, stabzz = stabalizer_gen(peps_sites[1,:])
-    # peps_copy = deepcopy(peps)
-    # peps_project_out!(peps_copy, peps_sites, stabxx, 1)
-    # stabxx_measure = (peps_trace_mum(peps_copy)[1])/probab_after_detec
-    # push!(stabxx_list, stabxx_measure)
-    # #
-    # peps_copy = deepcopy(peps)
-    # peps_project_out!(peps_copy, peps_sites, stabzz, 1)
-    # stabzz_measure = (peps_trace_mum(peps_copy)[1])/probab_after_detec
-    # push!(stabzz_list, stabzz_measure)
-#
-
-for dep in [0, 0.005, 0.01, 0.02]
-    println("dep is  ",dep)
-    f = jldopen("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps = f["peps"]
-    close(f)
-    f = jldopen("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps_sites = f["peps_sites"]
-    close(f)
-
-    # stabxx, stabzz = stabalizer_gen(peps_sites[1,:])
-    println("peps state 0")
-    peps_project_out!(peps, peps_sites, 0, 1)
-    println("peps state 1")
-    probab_after_detec = peps_trace_mum(peps)[1]
-    println("peps state 2")
-    push!(prob_list, probab_after_detec)
-end
-
-for dep in [0.005, ]
-    println("dep is  ",dep)
-    # println("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2")
-    f = load("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "peps_sites")
-    peps_sites = f
-    # close(f)
-
-    carryover = 1
-
-    for i=1:no_cavs
-        println("no_cavs is  ",i)   
-        f = jldopen("MPOFuncs/Data/peps_part" * string(i) * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-        peps_part = f["peps_part"]
-        close(f)
-
-        t1 = time()
-        for j=1:4
-            peps_part[1, j] *= delta(peps_sites[1, 4*(i-1)+j], peps_sites[1, 4*(i-1)+j]')
-        end
-        println("Contraction took ", time()-t1)
-        t1 = time()
-        sequ = ITensors.optimal_contraction_sequence([peps_part[1,1:4];peps_part[2,1:4]])
-        println("Finding optimal took ", time()-t1)
-        t1 = time()
-        carryover *= contract([peps_part[1,1:4];peps_part[2,1:4]]; sequence=sequ)
-        println("Contraction took ", time()-t1)
+# fidel below
+trace_val = 1.0
+ideal_bell_mpo = ideal_bell(peps_sites[1,:])
+for i=1:no_cavs
+    peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+    for j=1:4
+        peps_top[j] *= ideal_bell_mpo[j]
     end
-    push!(prob_list, carryover)
+    bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+    sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+    block = contract([peps_top ; bottom]; sequence=sequ)
+    println("block ", inds(block))
+    trace_val *= block
 end
+fidel_list[dep] = trace_val[1]
 
-for dep in [ 0.005, ]
-    f = jldopen("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps = f["peps"]
-    close(f)
-    f = jldopen("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps_sites = f["peps_sites"]
-    close(f)
+# stabxx below
+stabxx, stabzz = stabalizer_gen(peps_sites[1,:])
+# stabxx = -1 * apply(X_op12 , X_op34)
+# stabzz =  apply(Z_op12 , Z_op34)
+# err_IX = X_op34
+# err_XI = X_op12
+# err_IZ = Z_op34
+# err_ZI = Z_op12
+# err_XZ = apply(X_op12 , Z_op34)
+# err_ZX = apply(Z_op12 , X_op34)
 
-    ideal_bell_mpo = ideal_bell(peps_sites[1,:])
-    peps_project_out!(peps, peps_sites, ideal_bell_mpo, 1)
-    fidel = (peps_trace_mum(peps)[1])
-    push!(fidel_list, fidel)
+# stabxx below
+trace_val = 1.0
+for i=1:no_cavs
+    peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+    for j=1:4
+        peps_top[j] *= stabxx[j]
+    end
+    bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+    sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+    block = contract([peps_top ; bottom]; sequence=sequ)
+    println("block ", inds(block))
+    trace_val *= block
 end
+stabxx_list[dep] = trace_val[1]
 
-
-
-for dep in [0, 0.005, 0.01, 0.02]
-    f = jldopen("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps = f["peps"]
-    close(f)
-    f = jldopen("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps_sites = f["peps_sites"]
-    close(f)
-
-    stabxx, stabzz = stabalizer_gen(peps_sites[1,:])
-    peps_project_out!(peps, peps_sites, stabxx, 1)
-    stabxx_measure = (peps_trace_mum(peps)[1])
-    push!(stabxx_list, stabxx_measure)
+# stabzz below
+for i=1:no_cavs
+    peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+    for j=1:4
+        peps_top[j] *= stabzz[j]
+    end
+    bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+    sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+    block = contract([peps_top ; bottom]; sequence=sequ)
+    println("block ", inds(block))
+    trace_val *= block
 end
-# println("This xx took total ", time()-t)
-# plot(real(stabxx_list))
+stabzz_list[dep] = trace_val[1]
 
-# t = time()
+# IX_error below
 
-for dep in [0, 0.005, 0.01, 0.02]
-    f = jldopen("MPOFuncs/Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps = f["peps"]
-    close(f)
-    f = jldopen("MPOFuncs/Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-    peps_sites = f["peps_sites"]
-    close(f)
+# XI_error below
 
-    stabxx, stabzz = stabalizer_gen(peps_sites[1,:])
-    peps_project_out!(peps, peps_sites, stabzz, 1)
-    stabzz_measure = (peps_trace_mum(peps)[1])
-    push!(stabzz_list, stabzz_measure)
-end
-# println("This zz took total ", time()-t)
-plot(real(stabzz_list))
+# IZ_error below
 
+# ZI_error below
 
+# XZ_error below
 
-plot(real(prob_list))
-plot!(real(prob_list), seriestype="scatter", label="Probability")
+# ZX_error below
 
-plot(real(fidel_list./prob_list))
-plot!(32 .*real(fidel_list))
-plot!(real(fidel_list./prob_list), seriestype="scatter", label="Fidelity")
-
-plot(real(stabxx_list./prob_list))
-plot!(real(stabxx_list./prob_list), seriestype="scatter", label="Stab XX")
-plot!(real(stabzz_list./prob_list))
-plot!(real(stabzz_list./prob_list), seriestype="scatter", label="Stab ZZ")
-# stabzz_list
-plot!(0 .* real(prob_list))
-100 .* (1 .- (32 .* real(prob_list)))
 # ######################### this is to show correct matrix is produced form hamiltonian ###########################
     # layer = 1
     # site_i = 1
@@ -626,25 +517,3 @@ plot!(0 .* real(prob_list))
 
 # a = [2,3,3,2,2,2]
 # jldsave("MPOFuncs/Data/peps_test.jld2" ; a)
-
-dep = 0.02
-mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
-sum(eigenvals)
-ex = expect(mpo_i, sites_i)
-
-1-sum(ex)
-
-
-
-
-list_test = [1:5;]
-
-
-for i=1:1
-    block = list_test[2:2+i]
-    println(block)
-    block = block .+ 1
-    println(block)
-    println(list_test)
-end
-println(list_test)

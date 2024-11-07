@@ -8,18 +8,19 @@ gamma = 1.0
 no_cavs = 10
 dt = 0.01
 t_final = 10.0
-dep = 0.02
+dep = 0.014
 
 prob_list = Dict()
 fidel_list = Dict()
 stabxx_list = Dict()
 stabzz_list = Dict()
-# err_IX_list = Dict()
-# err_XI_list = Dict()
-# err_IZ_list = Dict()
-# err_ZI_list = Dict()
-# err_XZ_list = Dict()
-# err_ZX_list = Dict()
+stabyy_list = Dict()
+err_IX_list = Dict()
+err_XI_list = Dict()
+err_IZ_list = Dict()
+err_ZI_list = Dict()
+err_XZ_list = Dict()
+err_ZX_list = Dict()
 
 
 function peps_expect(peps_array, peps_sites)
@@ -282,8 +283,50 @@ function ideal_bell(sites_array)
     return bell_mpo
 end
 
-function stabalizer_gen(site_array)
-    
+function error_bell( err_type, sites_array)
+    bell_mpo = ideal_bell(sites_array)
+    X12, X34, Z12, Z34 = op_gen(sites_array)
+    if err_type[1] == 'X' && err_type[2] == 'X'
+        err_mpo = apply(X12, X34)
+    elseif err_type[1] == 'Z' && err_type[2] == 'Z'
+        err_mpo = apply(Z12, Z34)
+    elseif err_type[1] == 'X' && err_type[2] == 'Z'
+        err_mpo = apply(X12, Z34)
+    elseif err_type[1] == 'Z' && err_type[2] == 'X'
+        err_mpo = apply(Z12, X34)
+    elseif err_type[1] == 'I' && err_type[2] == 'X'
+        err_mpo = X34
+    elseif err_type[1] == 'X' && err_type[2] == 'I'
+        err_mpo = X12
+    elseif err_type[1] == 'I' && err_type[2] == 'Z'
+        err_mpo = Z34
+    elseif err_type[1] == 'Z' && err_type[2] == 'I'
+        err_mpo = Z12
+    end
+    comm_ind = 1
+    for i=1:length(sites_array)
+        temp_term = err_mpo[i]' * bell_mpo[i]
+        temp_term = replaceprime(temp_term, 2=>1)
+        temp_term = temp_term' * err_mpo[i]
+        temp_term = replaceprime(temp_term, 1=>0)
+        temp_term = replaceprime(temp_term, 2=>1)
+        temp_term *= comm_ind
+        if i == length(sites_array)
+            nothing
+        else
+            comm_ind1 = commonind(bell_mpo[i], bell_mpo[i+1])
+            comm_ind2 = commonind(err_mpo[i], err_mpo[i+1])
+            comm_ind = combiner([comm_ind1, comm_ind2, comm_ind2'])
+            temp_term *= comm_ind
+        end
+        bell_mpo[i] = temp_term
+    end
+    # bell_mpo = apply( err_mpo, apply(bell_mpo, err_mpo))
+    return bell_mpo
+end
+
+function op_gen(site_array)
+
     no_cavs = Int(length(site_array)/4)
 
     X_op12 = OpSum()
@@ -311,193 +354,370 @@ function stabalizer_gen(site_array)
     Z_op12 = MPO(Z_op12, site_array)
     Z_op34 = MPO(Z_op34, site_array)
 
-    # Stab_1 = apply(X_op12 , Z_op34)
-    # Stab_2 = apply(Z_op12 , X_op34)
+    return X_op12, X_op34, Z_op12, Z_op34
+end
 
+function stabalizer_gen(site_array)
+
+    X_op12, X_op34, Z_op12, Z_op34 = op_gen(site_array)
     Stab_3 = -1 * apply(X_op12 , X_op34)
-    Stab_4 = apply(Z_op12 , Z_op34)
+    Stab_4 = -1 * apply(Z_op12 , Z_op34)
+    Stab_5 = apply( apply(Z_op12, X_op12) , apply(Z_op34, X_op34) )
 
-    return Stab_3, Stab_4
+    return Stab_3, Stab_4, Stab_5
 end
 
+dep_list = [0:0.0025:0.02;]
 
-# g2(gamma, dep, t_final, dt, no_cavs; reverse=false)
-
-# for dep in [0.02, ]
-println("dep is  ",dep)
-mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
-# sites_i = ITensors.siteinds("Qudit", no_cavs; dim=5)
-# input_list = repeat(["Ground",],no_cavs)
-# input_list[1] = "Excite1" 
-# mpo_i = MPO(sites_i, input_list)
-signal_mpo, signal_sites = MPOFuncs.n_copy_mpo(mpo_i, sites_i, 4)
-# below bloack rearranges MPO to keep all similar modes together
-# in essence we only have to deal with 4 sites of a mode at a time
-for i=4:-1:1
-    for j=no_cavs:-1:1
-        println(i,j)
-        signal_mpo = MPOFuncs.swap_ij!(signal_mpo, signal_sites, (no_cavs*(i-1))+j, (no_cavs*(i-1))+j + ((4-i)*(j-1)))
-    end
-end
-ancilla_sites = siteinds("Qudit", length(signal_mpo), dim=5)
-ancilla_mpo = MPO(ancilla_sites, repeat(["Ground",],length(signal_mpo)))
-
-peps, peps_sites = peps_zipper(signal_mpo, ancilla_mpo, signal_sites, ancilla_sites)
-println("peps state 0")
-
-detect_mpo = detect_1100_anymode(peps_sites[2,:])
-comb3 = 1
-
-jldsave("Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps_sites)
-
-for i=0:no_cavs-1
-
-    ti = time()
-    println("at cav no ", i+1)
-
-    i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
-    println(i1, i2, i3, i4)
-
-    peps[1,i1] , peps[2,i1] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i1] , peps[2,i1], peps_sites[1,i1], peps_sites[2,i1])
-    peps[1,i2] , peps[2,i2] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i2] , peps[2,i2], peps_sites[1,i2], peps_sites[2,i2])
-    peps[1,i3] , peps[2,i3] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i3] , peps[2,i3], peps_sites[1,i3], peps_sites[2,i3])
-    peps[1,i4] , peps[2,i4] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i4] , peps[2,i4], peps_sites[1,i4], peps_sites[2,i4])
-
-    beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
-    beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
-    beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1, i3)
-    beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
-
-    println("peps state 1 | time ", time()-ti)
-    ti = time()
-    # comb3 = 1
-    for j=1:4
-        ind = 4i + j
-        a = peps[2,ind] * detect_mpo[ind] 
-        a *= comb3
-        if ind==(no_cavs*4)
-            nothing
-        else
-            comb3_1 = commonind(a, peps[2,ind+1])
-            comb3_2 = commonind(a, detect_mpo[ind+1])
-            comb3 = combiner([comb3_1, comb3_2])
-            a *= comb3
+for dep in dep_list
+    println("dep is  ",dep)
+    mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
+    # sites_i = ITensors.siteinds("Qudit", no_cavs; dim=5)
+    # input_list = repeat(["Ground",],no_cavs)
+    # input_list[1] = "Excite1" 
+    # mpo_i = MPO(sites_i, input_list)
+    signal_mpo, signal_sites = MPOFuncs.n_copy_mpo(mpo_i, sites_i, 4)
+    # below bloack rearranges MPO to keep all similar modes together
+    # in essence we only have to deal with 4 sites of a mode at a time
+    for i=4:-1:1
+        for j=no_cavs:-1:1
+            println(i,j)
+            signal_mpo = MPOFuncs.swap_ij!(signal_mpo, signal_sites, (no_cavs*(i-1))+j, (no_cavs*(i-1))+j + ((4-i)*(j-1)))
         end
-        peps[2,ind] = a
     end
+    ancilla_sites = siteinds("Qudit", length(signal_mpo), dim=5)
+    ancilla_mpo = MPO(ancilla_sites, repeat(["Ground",],length(signal_mpo)))
 
-    # # peps[2,2]
-    println("peps state 2 | time ", time()-ti)
-    ti = time()
+    peps, peps_sites = peps_zipper(signal_mpo, ancilla_mpo, signal_sites, ancilla_sites)
+    println("peps state 0")
 
-    # # finding optimal THEN contract vs JUST contract ?????
-    sequ = ITensors.optimal_contraction_sequence(peps[2,i1:i4])
-    block = contract(peps[2,i1:i4]; sequence = sequ)  
-    # peps_top = peps_subblock[1,i1:i4]   
-    
-    println("peps state 3 | time ", time()-ti)
+    detect_mpo = detect_1100_anymode(peps_sites[2,:])
+    comb3 = 1
+
+    jldsave("Data/peps_sites_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2" ; peps_sites)
+
+    for i=0:no_cavs-1
+
+        ti = time()
+        println("at cav no ", i+1)
+
+        i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
+        println(i1, i2, i3, i4)
+
+        peps[1,i1] , peps[2,i1] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i1] , peps[2,i1], peps_sites[1,i1], peps_sites[2,i1])
+        peps[1,i2] , peps[2,i2] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i2] , peps[2,i2], peps_sites[1,i2], peps_sites[2,i2])
+        peps[1,i3] , peps[2,i3] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i3] , peps[2,i3], peps_sites[1,i3], peps_sites[2,i3])
+        peps[1,i4] , peps[2,i4] = MPOFuncs.beamsplitter_peps_tensor(peps[1,i4] , peps[2,i4], peps_sites[1,i4], peps_sites[2,i4])
+
+        beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
+        beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
+        beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1, i3)
+        beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
+
+        println("peps state 1 | time ", time()-ti)
+        ti = time()
+        # comb3 = 1
+        for j=1:4
+            ind = 4i + j
+            a = peps[2,ind] * detect_mpo[ind] 
+            a *= comb3
+            if ind==(no_cavs*4)
+                nothing
+            else
+                comb3_1 = commonind(a, peps[2,ind+1])
+                comb3_2 = commonind(a, detect_mpo[ind+1])
+                comb3 = combiner([comb3_1, comb3_2])
+                a *= comb3
+            end
+            peps[2,ind] = a
+        end
+
+        # # peps[2,2]
+        println("peps state 2 | time ", time()-ti)
+        ti = time()
+
+        # # finding optimal THEN contract vs JUST contract ?????
+        sequ = ITensors.optimal_contraction_sequence(peps[2,i1:i4])
+        block = contract(peps[2,i1:i4]; sequence = sequ)  
+        # peps_top = peps_subblock[1,i1:i4]   
+        
+        println("peps state 3 | time ", time()-ti)
 
 
-    
-    save("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i+1)) * ".jld2" , "peps_top", peps[1,i1:i4], "bottom", block)
-    # save("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i+1)) * ".jld2" , "bottom", block)
-    
-    for loc in [i1,i2,i3,i4]
-        peps[1,loc] = ITensor(0)
-        peps[2,loc] = ITensor(0)
+        
+        save("Data/peps_dep" * string(trunc( Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i+1)) * ".jld2" , "peps_top", peps[1,i1:i4], "bottom", block)
+        
+        
+        for loc in [i1,i2,i3,i4]
+            peps[1,loc] = ITensor(0)
+            peps[2,loc] = ITensor(0)
+        end
+
     end
+end
+
+
+for dep in dep_list
+    println("dep is  ",dep)
+    trace_val = 1.0
+    f = jldopen("Data/peps_sites_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
+    peps_sites = f["peps_sites"]
+    close(f)
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int,dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        # peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2", "peps_top")
+        for j=1:4
+            peps_top[j] *= delta(peps_sites[1, 4*(i-1)+j], peps_sites[1, 4*(i-1)+j]')
+        end
+        # bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+
+        # println("block ", inds(block))
+        trace_val *= block
+
+    end
+    prob_list[dep] = trace_val[1]
+
+    # fidel below
+    trace_val = 1.0
+    ideal_bell_mpo = ideal_bell(peps_sites[1,:])
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        peps_top[1] *= trace_val
+        for j=1:4
+            peps_top[j] *= ideal_bell_mpo[4(i-1) + j]
+        end
+        # peps_top[1]
+        # peps_top
+        bottom = load("Data/peps_dep" * string(trunc(Int,dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        # [peps_top ; bottom]
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val = block
+    end
+    fidel_list[dep] = trace_val[1]
+end
+
+for dep in dep_list
+
+    println("dep is  ",dep)
+
+    f = jldopen("Data/peps_sites_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
+    peps_sites = f["peps_sites"]
+    close(f)
+
+    # stabxx below
+    stabxx, stabzz, stabyy = stabalizer_gen(peps_sites[1,:])
+    # stabzz
+    # stabxx = -1 * apply(X_op12 , X_op34)
+    # stabzz =  apply(Z_op12 , Z_op34)
+    # err_IX = X_op34
+    # err_XI = X_op12
+    # err_IZ = Z_op34
+    # err_ZI = Z_op12
+    # err_XZ = apply(X_op12 , Z_op34)
+    # err_ZX = apply(Z_op12 , X_op34)
+
+
+
+    # stabxx below
+    println("stabxx")
+    trace_val = 1.0
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= stabxx[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
+    end
+    stabxx_list[dep] = trace_val[1]
+
+    # stabzz below
+    println("stabzz")
+    trace_val = 1.0
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= stabzz[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
+    end
+    stabzz_list[dep] = trace_val[1]
+
+    # stabyy below
+    println("stabyy")
+    trace_val = 1.0
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= stabyy[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
+    end
+    stabyy_list[dep] = trace_val[1]
 
 end
 
 
-trace_val = 1.0
-f = jldopen("Data/peps_sites_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
-peps_sites = f["peps_sites"]
-close(f)
-for i=1:no_cavs
-    peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
-    # peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2", "peps_top")
-    for j=1:4
-        peps_top[j] *= delta(peps_sites[1, 4*(i-1)+j], peps_sites[1, 4*(i-1)+j]')
+pl= [real.(prob_list[i]) for i in dep_list]
+
+plot(dep_list, pl, label="prob_list", seriestype="scatter")
+plot(dep_list, [real.(fidel_list[i]) for i in dep_list]./pl, label="fidel_list")
+plot!(dep_list, [real.(stabxx_list[i]) for i in dep_list]./pl, label="xx_list")
+plot!(dep_list, -[real.(stabzz_list[i]) for i in dep_list]./pl, label="zz_list")
+plot!(dep_list, -[real.(stabyy_list[i]) for i in dep_list]./pl, label="yy_list")
+
+plot(dep_list, 4 .* [real.(fidel_list[i]) for i in dep_list], label="fidel_list")
+plot!(dep_list, pl .+ [real.(stabxx_list[i]) for i in dep_list] .- [real.(stabzz_list[i]) for i in dep_list] .- [real.(stabyy_list[i]) for i in dep_list], label="stab_sum", ylimits=(0.1, 0.125))
+
+
+#
+    dep = 0.01
+    println("dep is  ",dep)
+
+    f = jldopen("Data/peps_sites_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
+    peps_sites = f["peps_sites"]
+    close(f)
+
+    # stabxx below
+    stabxx, stabzz, stabyy = stabalizer_gen(peps_sites[1,:])
+    println(linkdims(stabxx))
+    println(linkdims(stabzz))
+    println(linkdims(stabyy))
+#
+
+for dep in dep_list
+
+    println("dep is  ",dep)
+    f = jldopen("Data/peps_sites_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * ".jld2", "r")
+    peps_sites = f["peps_sites"]
+    close(f)
+
+    # # IX_error below
+    trace_val = 1.0
+    IX_mpo = error_bell("IX", peps_sites[1,:])
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= IX_mpo[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
     end
-    # bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
-    bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
-    sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
-    block = contract([peps_top ; bottom]; sequence=sequ)
+    err_IX_list[dep] = trace_val[1]
+    # # trace_val[1]*32
 
-    println("block ", inds(block))
-    trace_val *= block
-
-end
-prob_list[dep] = trace_val[1]
-
-# fidel below
-trace_val = 1.0
-ideal_bell_mpo = ideal_bell(peps_sites[1,:])
-for i=1:no_cavs
-    peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
-    for j=1:4
-        peps_top[j] *= ideal_bell_mpo[j]
+    # # XI_error below
+    trace_val = 1.0
+    XI_mpo = error_bell("XI", peps_sites[1,:])
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= XI_mpo[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
     end
-    bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
-    sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
-    block = contract([peps_top ; bottom]; sequence=sequ)
-    println("block ", inds(block))
-    trace_val *= block
-end
-fidel_list[dep] = trace_val[1]
+    err_XI_list[dep] = trace_val[1]
 
-# stabxx below
-stabxx, stabzz = stabalizer_gen(peps_sites[1,:])
-# stabxx = -1 * apply(X_op12 , X_op34)
-# stabzz =  apply(Z_op12 , Z_op34)
-# err_IX = X_op34
-# err_XI = X_op12
-# err_IZ = Z_op34
-# err_ZI = Z_op12
-# err_XZ = apply(X_op12 , Z_op34)
-# err_ZX = apply(Z_op12 , X_op34)
 
-# stabxx below
-trace_val = 1.0
-for i=1:no_cavs
-    peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
-    for j=1:4
-        peps_top[j] *= stabxx[j]
+    # IZ_error below
+    trace_val = 1.0
+    IZ_mpo = error_bell("IZ", peps_sites[1,:])
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= IZ_mpo[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
     end
-    bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
-    sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
-    block = contract([peps_top ; bottom]; sequence=sequ)
-    println("block ", inds(block))
-    trace_val *= block
-end
-stabxx_list[dep] = trace_val[1]
+    err_IZ_list[dep] = trace_val[1]
 
-# stabzz below
-for i=1:no_cavs
-    peps_top = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
-    for j=1:4
-        peps_top[j] *= stabzz[j]
+    # ZI_error below
+    trace_val = 1.0
+    ZI_mpo = error_bell("ZI", peps_sites[1,:])
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= ZI_mpo[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
     end
-    bottom = load("Data/peps_dep" * string(Int(dep*1000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
-    sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
-    block = contract([peps_top ; bottom]; sequence=sequ)
-    println("block ", inds(block))
-    trace_val *= block
+    err_ZI_list[dep] = trace_val[1]
+
+
+    # XZ_error below
+    trace_val = 1.0
+    XZ_mpo = error_bell("XZ", peps_sites[1,:])
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= XZ_mpo[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
+    end
+    err_XZ_list[dep] = trace_val[1]
+
+
+    # ZX_error below
+    trace_val = 1.0
+    ZX_mpo = error_bell("ZX", peps_sites[1,:])
+    for i=1:no_cavs
+        peps_top = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "peps_top")
+        for j=1:4
+            peps_top[j] *= ZX_mpo[4(i-1) + j]
+        end
+        bottom = load("Data/peps_dep" * string(trunc(Int, dep*10000)) * "no_cavs" * string(Int(no_cavs)) * "part_" * string(Int(i)) * ".jld2" , "bottom")
+        sequ = ITensors.optimal_contraction_sequence([peps_top ; bottom])
+        block = contract([peps_top ; bottom]; sequence=sequ)
+        # println("block ", inds(block))
+        trace_val *= block
+    end
+    err_ZX_list[dep] = trace_val[1]
 end
-stabzz_list[dep] = trace_val[1]
 
-# IX_error below
 
-# XI_error below
+plot(dep_list, [real.(err_IX_list[i]) for i in dep_list]./pl, label="err_IX_list")
+plot!(dep_list, [real.(err_XI_list[i]) for i in dep_list]./pl, label="err_XI_list")
+plot!(dep_list, [real.(err_IZ_list[i]) for i in dep_list]./pl, label="err_IZ_list")
+plot!(dep_list, [real.(err_ZI_list[i]) for i in dep_list]./pl, label="err_ZI_list")
+plot!(dep_list, [real.(err_XZ_list[i]) for i in dep_list]./pl, label="err_XZ_list")
+plot!(dep_list, [real.(err_ZX_list[i]) for i in dep_list]./pl, label="err_ZX_list")
 
-# IZ_error below
 
-# ZI_error below
-
-# XZ_error below
-
-# ZX_error below
 
 # ######################### this is to show correct matrix is produced form hamiltonian ###########################
     # layer = 1

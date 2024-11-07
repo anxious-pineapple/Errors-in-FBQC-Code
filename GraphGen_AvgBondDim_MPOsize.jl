@@ -10,6 +10,7 @@ dep = 0.02
 ##  Checking how bond dim changes (is it a sublinear increase) at a fixed Dephasing
 
 avg_bond_dim = [;]
+max_bond_dim = [;]
 mpo_size = [;]
 avg_bond_dim_doubl = [;]
 mpo_size_doubl = [;]
@@ -22,7 +23,7 @@ for no_cavs in 2:15
     link_dim_vec = ITensors.linkdims(mpo)
     push!(avg_bond_dim, sum(link_dim_vec)/no_cavs)
     push!(mpo_size, sum( ( push!(link_dim_vec, 1) .* append!([1,],link_dim_vec[1:end-1])) ) )
-
+    push!(max_bond_dim, maximum(link_dim_vec))
     double, double_sites = MPOFuncs.n_copy_mpo(mpo, sites, 2)
     for i=no_cavs:-1:1
         print(i, " , ")
@@ -39,6 +40,7 @@ end
 
 p=plot(avg_bond_dim, label="before bmsplt")
 plot!(avg_bond_dim_doubl./2, label="after")
+plot!(max_bond_dim, label="max bond dim")
 
 a,b = linear_fit([2:15;], avg_bond_dim)
 plot!(a .+ b*[2:15;] ;label="", line=:dash)

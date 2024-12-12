@@ -5,7 +5,7 @@ using BenchmarkTools
 using JLD2
 
 gamma = 1.0
-no_cavs = 10
+no_cavs = 5
 dt = 0.01
 t_final = 10.0
 dep = 0.014
@@ -577,10 +577,20 @@ end
 pl= [real.(prob_list[i]) for i in dep_list]
 
 plot(dep_list, pl, label="prob_list", seriestype="scatter")
-plot(dep_list, [real.(fidel_list[i]) for i in dep_list]./pl, label="fidel_list")
-plot!(dep_list, [real.(stabxx_list[i]) for i in dep_list]./pl, label="xx_list")
-plot!(dep_list, -[real.(stabzz_list[i]) for i in dep_list]./pl, label="zz_list")
-plot!(dep_list, -[real.(stabyy_list[i]) for i in dep_list]./pl, label="yy_list")
+p = plot(dep_list.*100, [real.(fidel_list[i]) for i in dep_list]./pl, size=(800,500))
+plot!(dep_list.*100, [real.(fidel_list[i]) for i in dep_list]./pl, seriestype="scatter")
+plot!(legend=false)
+plot!(xlabel = "Depolarizing rate (%)", ylabel = "Fidelity of Bell State") 
+Plots.pdf(p, "bellstate_fidel.pdf")
+#  label="fidel_list")
+p2 = plot(dep_list.*100, [real.(stabxx_list[i]) for i in dep_list]./pl, label="XX Stab measure")
+plot!(dep_list.*100, [real.(stabxx_list[i]) for i in dep_list]./pl, seriestype="scatter", label="")
+plot!(dep_list.*100, -[real.(stabzz_list[i]) for i in dep_list]./pl, label="ZZ Stab measure")
+plot!(dep_list.*100, -[real.(stabzz_list[i]) for i in dep_list]./pl, seriestype="scatter", label="")
+plot!(dep_list.*100, -[real.(stabyy_list[i]) for i in dep_list]./pl, label="YY Stab measure")
+plot!(dep_list.*100, -[real.(stabyy_list[i]) for i in dep_list]./pl, seriestype="scatter", label="")
+plot!(xlabel = "Depolarizing rate (%)", ylabel = "Stabalizer Measurements", size=(800,500))
+Plots.pdf(p2, "bellstate_stabmeasure.pdf")
 
 plot(dep_list, 4 .* [real.(fidel_list[i]) for i in dep_list], label="fidel_list")
 plot!(dep_list, pl .+ [real.(stabxx_list[i]) for i in dep_list] .- [real.(stabzz_list[i]) for i in dep_list] .- [real.(stabyy_list[i]) for i in dep_list], label="stab_sum", ylimits=(0.1, 0.125))

@@ -1,3 +1,11 @@
+#
+# In this code im making a bell state in dual rail encoding
+# However since all the cavities are in the same MPO, this becomes increasingly data intensive 
+# with higher cavity numbers (very high entangling across the MPO chain)
+# Switched to a peps between the signal and ancilla 'sites' done in a subsequent code.
+#
+
+
 using ITensors
 import MPOFuncs
 using Plots

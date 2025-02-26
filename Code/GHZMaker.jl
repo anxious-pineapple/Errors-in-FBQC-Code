@@ -5,7 +5,7 @@ using BenchmarkTools
 using JLD2
 
 gamma = 1.0
-no_cavs = 10
+no_cavs = 3
 dt = 0.01
 t_final = 10.0
 dep = 0.014
@@ -240,6 +240,20 @@ function detect_10_anymode( site_list )
     return all_mps
 end
 
+function detect_W_anymode( site_list )
+    # 
+    mps_list = [;]
+    proj_list = repeat(["Ground",],length(site_list))
+    for i in 1:length(site_list)
+        proj_list[i] = "Excite1"
+        push!(mps_list, MPO(site_list, proj_list))
+        proj_list[i] = "Ground"
+    end
+    all_mps = sum(mps_list)
+
+    return all_mps
+end
+
 function peps_project_out!(peps_array, peps_sites, project_mpo, layer)
     # assuming 2 layer peps
     # assuming we're projecting out using an MPO (not MPS)
@@ -420,8 +434,16 @@ ancilla_mpo = MPO(ancilla_sites, repeat(["Ground",],length(signal_mpo)))
 peps, peps_sites = peps_zipper(signal_mpo, ancilla_mpo, signal_sites, ancilla_sites)
 
 detect_mpo = detect_10_anymode(peps_sites[2,:]) 
-linkdims(detect_mpo)
+truncate!(detect_mpo, cutoff=1e-5)
+plot(linkdims(detect_mpo))
+
+detect_mpo = detect_W_anymode(peps_sites[2,:]) 
+plot(linkdims(detect_mpo))
+truncate!(detect_mpo, cutoff=1e-5)
 comb=1
+
+
+
 for i in 0:no_cavs-1
     # i = 1
     println(i)

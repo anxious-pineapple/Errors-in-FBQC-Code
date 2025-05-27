@@ -5,7 +5,7 @@ using BenchmarkTools
 using JLD2
 
 gamma = 1.0
-no_cavs = 5
+no_cavs = 7
 dt = 0.01
 t_final = 10.0
 dep = 0.014
@@ -21,7 +21,8 @@ err_IZ_list = Dict()
 err_ZI_list = Dict()
 err_XZ_list = Dict()
 err_ZX_list = Dict()
-
+eigenvals_list = Dict()
+visibility_list = Dict()
 
 function peps_expect(peps_array, peps_sites)
     # here assuming list, to write for whole array
@@ -369,9 +370,18 @@ end
 
 dep_list = [0:0.0025:0.02;]
 
+# plot(dep_list, [real.(visibility_list[i]) for i in dep_list], label="visibility_list", seriestype="scatter")
+# plot([real.(visibility_list[i]) for i in dep_list], [real.(fidel_list[i]) for i in dep_list], label="fidel_list", seriestype="scatter")
+
 for dep in dep_list
     println("dep is  ",dep)
     mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
+    
+    #dont take no_cavs into account in visibility cause this is what the visibility of the state would be
+    # and then fidelity is not exact, constrained by numerical methods
+    eigenvals_list[dep] = eigenvals./sum(eigenvals)
+    visibility_list[dep] = sum((eigenvals./sum(eigenvals)).^2)
+
     # sites_i = ITensors.siteinds("Qudit", no_cavs; dim=5)
     # input_list = repeat(["Ground",],no_cavs)
     # input_list[1] = "Excite1" 
@@ -586,7 +596,7 @@ Plots.pdf(p, "bellstate_fidel.pdf")
 p2 = plot(dep_list.*100, [real.(stabxx_list[i]) for i in dep_list]./pl, label="XX Stab measure")
 plot!(dep_list.*100, [real.(stabxx_list[i]) for i in dep_list]./pl, seriestype="scatter", label="")
 plot!(dep_list.*100, -[real.(stabzz_list[i]) for i in dep_list]./pl, label="ZZ Stab measure")
-plot!(dep_list.*100, -[real.(stabzz_list[i]) for i in dep_list]./pl, seriestype="scatter", label="")
+plot!(dep_list.*100, -[real.(stabzz_list[i]) for i in dep_list]./pl, ç, label="")
 plot!(dep_list.*100, -[real.(stabyy_list[i]) for i in dep_list]./pl, label="YY Stab measure")
 plot!(dep_list.*100, -[real.(stabyy_list[i]) for i in dep_list]./pl, seriestype="scatter", label="")
 plot!(xlabel = "Depolarizing rate (%)", ylabel = "Stabalizer Measurements", size=(800,500))
@@ -747,3 +757,23 @@ plot!(dep_list, [real.(err_ZX_list[i]) for i in dep_list]./pl, label="err_ZX_lis
 
 # a = [2,3,3,2,2,2]
 # jldsave("MPOFuncs/Data/peps_test.jld2" ; a)
+
+
+
+######################################## Fidelity graph
+F_exact(dep) = (1 + visibility_list[dep] + visibility_list[dep]^2 + sum(eigenvals_list[dep].^4)) / (6 - 2visibility_list[dep])
+F_up(V) = (1 + V + 2V^2)/(6-2V)
+F_down(V) =  (1 + 4V + 3V^2)/(12-4V)
+
+v_list = [real(visibility_list[i]) for i in dep_list]
+p = plot(v_list, [real(fidel_list[i])/real(prob_list[i]) for i in dep_list], label="Numeric Fidelity", seriestype="scatter")
+plot!( v_list, [F_exact(i) for i in dep_list], label="Analytic Fidelity")
+plot!(p, v_list, F_up.(v_list), label="Upper Bound", ls=:dash)
+plot!(p, v_list, F_down.(v_list), label="Lower Bound", ls=:dash)
+plot!(p, xlabel = "Visibility", ylabel = "Fidelity of Bell State")
+
+plot(v_list, [100*([F_exact(i) for i in dep_list].-[real(fidel_list[i])/real(prob_list[i]) for i in dep_list])./[F_exact(i) for i in dep_list]], label="Error percent", seriestype="scatter")
+
+
+plot(dep_list, 32*[real.(prob_list[i]) for i in dep_list], label="prob_list", seriestype="scatter")
+plot!(dep_list, zeros(9).+(1/32), label="Ideal Prob", ls=:dash)

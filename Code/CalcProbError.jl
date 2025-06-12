@@ -1,8 +1,9 @@
 import PauliStrings as ps
 using PrettyTables
+using Plots
 
 # Initialise
-num_sites = 7
+num_sites = 5
 Stab_gen_list = []
 Stab_list = []
 
@@ -53,8 +54,8 @@ for i in eachindex(Stab_list)
 end
 # error_coeffs
 
-γ = 0.1
-η = 0.99
+γ = 0.5
+η = 0.9
 # ζ = ∑ αi^2 βi^2
 ζ = 0.9
 
@@ -90,10 +91,72 @@ sum(errorrate)
 
 errors_dict = Dict(zip(error_list_string, errorrate))
 # pretty_table(errors_dict, sortkeys=true)
-pretty_table([error_list_string errorrate], header=["Error", "Error Rate"], title="Pauli error map")
+pretty_table([error_list_string errorrate], header=["Error", "Probability"], title="Pauli error map")
 
 #if in descending order
 sortedindices = sortperm(errorrate, rev=true, dims=1)
 sorted_errorrate = errorrate[sortedindices]
 sorted_error_list_string = error_list_string[sortedindices]
-pretty_table([sorted_error_list_string sorted_errorrate], header=["Error", "Error Rate"], title="Pauli error map (sorted)")
+pretty_table([sorted_error_list_string sorted_errorrate], header=["Error", "Probability"], title="Pauli error map (sorted)")
+
+d = Dict([(1,1),(2,3)])
+[x==2 && d[x] for x in findall(x->true , d)]
+
+
+for i in Dict([(1,1),(2,3)])
+    println(i[1]==2)
+end
+count(i->i==2, [2,3,4])
+
+typeof(zip(error_list_string, errorrate))
+
+
+marginalprob_list = []
+for i in 1:num_sites
+    marginalprob = 0.0
+    println("site ",i)
+    for j in eachindex(error_list_string)
+        if error_list_string[j][i] == 'Z'
+            println(error_list_string[j])
+            marginalprob += errorrate[j]
+        end
+    end
+    push!(marginalprob_list, marginalprob)
+end
+marginalprob_list
+
+expected_indepprob = []
+for i in error_list_string
+    indep_prob = 1.0
+    for j in 1:num_sites
+        if i[j] == 'Z'
+            indep_prob *= marginalprob_list[j]
+        else
+            indep_prob *= (1 - marginalprob_list[j])
+        end
+    end
+    push!(expected_indepprob, indep_prob)
+end
+# expected_indepprob
+
+plot(errorrate) 
+plot!(expected_indepprob, linestyle=:dash) 
+pstat = sum((errorrate .- expected_indepprob).^2 ./ expected_indepprob )
+
+using Distributions
+p_value = ccdf(Chisq(2^num_sites - 1 - num_sites), pstat)
+# p_value > > 0.05 hence all sites are independent
+
+n_errors_list(n) = [x for x in error_list_string if count(y -> y == 'Z', x)==n ]
+
+errorstring_2_indices = findall(x -> count(y -> y == 'Z', x) == 2, error_list_string)
+for i in errorstring_2_indices
+    obs_prob = errorrate[i]
+    error_locale = findall(x -> x =='Z', error_list_string[i])
+    indep_prob = prod([ j in error_locale ? marginalprob_list[j] : (1-marginalprob_list[j]) for j in 1:num_sites])
+    println(error_list_string[i])
+    println("correlated fraction ",(obs_prob-indep_prob)/obs_prob)
+    println("independent fraction ",indep_prob/obs_prob)
+end
+
+count(x -> x == 'Z', error_list_string[1])

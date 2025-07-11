@@ -1,104 +1,95 @@
-
 import PauliStrings as ps 
 using PrettyTables, Plots, DataFrames, GLM, LinearAlgebra, Statistics, StatsBase, Base.Threads, CSV, Symbolics
 using BenchmarkTools
-
-
-# Initialise
-num_sites = 6;
-Stab_gen_list = [];
-Stab_list = [];
-
-# Create stabilizer generators
-push!(Stab_gen_list, ps.Operator(num_sites));
-Stab_gen_list[1] +=  "X",1,"Z",2;
-for i in 2:num_sites-1
-    push!(Stab_gen_list, ps.Operator(num_sites))
-    Stab_gen_list[i] +=  "Z",i-1,"X",i,"Z",i+1
-end
-push!(Stab_gen_list, ps.Operator(num_sites));
-Stab_gen_list[num_sites] += "Z",num_sites-1,"X",num_sites;
-# Stab_gen_list
-
-# Create stabilizer list
-for i in 0:2^num_sites-1
-    push!(Stab_list, ps.Operator(num_sites))
-    Stab_list[end] += repeat("I",num_sites)
-    bin_num = bitstring(i)[end-num_sites+1:end]
-    for j in 1:num_sites
-        if bin_num[j] == '1' 
-            Stab_list[end] *= Stab_gen_list[j]
-        end
-    end
-end
-# Stab_list
-Stab_list_string = [ps.op_to_strings(i)[2][1] for i in Stab_list];
-
-# All possible errors in pauli error map with Just Z errors
-## Note, Is a string!!!!
-error_list_string = ps.op_to_strings(ps.all_z(num_sites))[2];
-error_list = [ps.Operator(i) for i in error_list_string];
-# error_list_string
-# Construct matrix of error coeffs
-error_coeffs = zeros(Int,2^num_sites, 2^num_sites);
-Threads.@threads for i in eachindex(Stab_list_string)
-    Threads.@threads for j in eachindex(error_list_string)
-        coeff = 1
-        # println(i)
-        opA = Stab_list_string[i]
-        opB = error_list_string[j]
-        for z_pos in findall(x->x=='Z', opB)
-            if opA[z_pos] in ['Z', '1']
-                coeff *= 1
-            else
-                coeff *= -1
-            end
-                
-        end    
-        error_coeffs[i,j] = coeff
-    end
-end
-error_coeffs;
-
-γ = 0.3;
-η = 0.9;
-# ζ = ∑ αi^2 βi^2
-ζ = 0.9;
-
-# Construct vectors of expectation value of stabalisers
-stab_exp_list = zeros(2^num_sites, 1);
-for i in eachindex(Stab_list_string)
-    stab_exp = [1.0 1.0 1.0 1.0]
-    for j in Stab_list_string[i]
-        if j == '1'
-            stab_exp *= (exp(-2*abs(γ)^2) * (η + (1-η)*2*abs(γ)^2)) * 0.5 * [1.0 1.0 1.0 1.0 ; 0.0 0.0 0.0 0.0 ; 0.0 0.0 0.0 0.0 ; 1.0 -1.0 -1.0 1.0]
-        elseif j == 'X'
-            a = 2 * (1-η) * abs(γ)^2
-            b = η * ζ
-            stab_exp *= exp(-2*abs(γ)^2) * 0.5 * [a a a a ; b -b b -b ; b b -b -b ; a -a -a a]
-        elseif j == 'Y'
-            stab_exp *= (1im * η * ζ * exp(-2*abs(γ)^2)) * 0.5 * [0.0 0.0 0.0 0.0 ; 1.0 -1.0 1.0 -1.0 ; -1.0 -1.0 1.0 1.0 ; 0.0 0.0 0.0 0.0]
-        elseif j == 'Z'
-            stab_exp *= (η * exp(-2*abs(γ)^2)) * 0.5 * [1.0 1.0 1.0 1.0 ; 0.0 0.0 0.0 0.0 ; 0.0 0.0 0.0 0.0 ; -1.0 1.0 1.0 -1.0]
-        end
-    end
-    stab_exp *= [1.0 0.0 0.0 0.0]' 
-    # println(stab_exp)
-    stab_exp_list[i] = stab_exp[1]
-end
-# stab_exp_list        
-    
-#normalise stabilizer expectation values by identity
-stab_exp_list = abs.(stab_exp_list / stab_exp_list[1]);
-
-errorrate_ = (error_coeffs^-1 * stab_exp_list);
-# error_list_string;
-# errorrate = errorrate_[repeat([1],2^num_sites) + parse.(Int,replace.(replace.(error_list_string, "1"=>"0"),"Z"=>"1");base=2)]
-# parse.(Int,replace.(error_list_string, "Z"=>"0");base=2)
-
 using Optim
 using LinearAlgebra
 using StatsBase
+
+# Create stabilizer generators
+function stab_gen(num_sites)
+    Stab_gen_list = [];
+    push!(Stab_gen_list, ps.Operator(num_sites));
+    Stab_gen_list[1] +=  "X",1,"Z",2;
+    for i in 2:num_sites-1
+        push!(Stab_gen_list, ps.Operator(num_sites))
+        Stab_gen_list[i] +=  "Z",i-1,"X",i,"Z",i+1
+    end
+    push!(Stab_gen_list, ps.Operator(num_sites));
+    Stab_gen_list[num_sites] += "Z",num_sites-1,"X",num_sites;
+    return Stab_gen_list
+end
+
+# Create stabilizer list
+function stabaliser_list(num_sites)
+    Stab_list = []
+    Stab_gen_list = stab_gen(num_sites)
+    for i in 0:2^num_sites-1
+        push!(Stab_list, ps.Operator(num_sites))
+        Stab_list[end] += repeat("I",num_sites)
+        bin_num = bitstring(i)[end-num_sites+1:end]
+        for j in 1:num_sites
+            if bin_num[j] == '1' 
+                Stab_list[end] *= Stab_gen_list[j]
+            end
+        end
+    end
+    Stab_list_string = [ps.op_to_strings(i)[2][1] for i in Stab_list];
+    return Stab_list, Stab_list_string
+end
+
+# Construct matrix of error coeffs
+function error_coeffs_gen(error_string, stab_string, num_sites)
+    error_coeffs = zeros(Int,2^num_sites, 2^num_sites)
+    Threads.@threads for i in eachindex(stab_string)
+        Threads.@threads for j in eachindex(error_string)
+            coeff = 1
+            # println(i)
+            opA = stab_string[i]
+            opB = error_string[j]
+            for z_pos in findall(x->x=='Z', opB)
+                if opA[z_pos] in ['Z', '1']
+                    coeff *= 1
+                else
+                    coeff *= -1
+                end
+                    
+            end    
+            error_coeffs[i,j] = coeff
+        end
+    end
+    return error_coeffs
+end;
+
+# Construct vectors of expectation value of stabalisers
+function stab_exp_vals(params, num_sites, stab_string)
+    γ , η , ζ = params
+    stab_exp_list = zeros(2^num_sites, 1);
+    for i in eachindex(stab_string)
+        stab_exp = [1.0 1.0 1.0 1.0]
+        for j in stab_string[i]
+            if j == '1'
+                stab_exp *= (exp(-2*abs(γ)^2) * (η + (1-η)*2*abs(γ)^2)) * 0.5 * [1.0 1.0 1.0 1.0 ; 0.0 0.0 0.0 0.0 ; 0.0 0.0 0.0 0.0 ; 1.0 -1.0 -1.0 1.0]
+            elseif j == 'X'
+                a = 2 * (1-η) * abs(γ)^2
+                b = η * ζ
+                stab_exp *= exp(-2*abs(γ)^2) * 0.5 * [a a a a ; b -b b -b ; b b -b -b ; a -a -a a]
+            elseif j == 'Y'
+                stab_exp *= (1im * η * ζ * exp(-2*abs(γ)^2)) * 0.5 * [0.0 0.0 0.0 0.0 ; 1.0 -1.0 1.0 -1.0 ; -1.0 -1.0 1.0 1.0 ; 0.0 0.0 0.0 0.0]
+            elseif j == 'Z'
+                stab_exp *= (η * exp(-2*abs(γ)^2)) * 0.5 * [1.0 1.0 1.0 1.0 ; 0.0 0.0 0.0 0.0 ; 0.0 0.0 0.0 0.0 ; -1.0 1.0 1.0 -1.0]
+            end
+        end
+        stab_exp *= [1.0 0.0 0.0 0.0]' 
+        # println(stab_exp)
+        stab_exp_list[i] = stab_exp[1]
+    end      
+        
+    #normalise stabilizer expectation values by identity
+    exp_iden = stab_exp_list[1]
+    # abs to ignore any - signs that may come from ignoring the same in the stab_string
+    stab_exp_list = abs.(stab_exp_list / exp_iden)
+    return stab_exp_list, exp_iden
+end;
 
 # Define the error model
 struct ErrorModel
@@ -106,18 +97,11 @@ struct ErrorModel
     observed_probs::Vector{Float64}  # Length 2^n_sites
     
     function ErrorModel(n_sites::Int, observed_probs::Vector{Float64})
-        @assert length(observed_probs) == 2^n_sites "observed_probs must have length 2^n_sites"
-        @assert abs(sum(observed_probs) - 1.0) < 1e-10 "observed_probs must sum to 1"
+        # @assert length(observed_probs) == 2^n_sites "observed_probs must have length 2^n_sites"
+        # @assert abs(sum(observed_probs) - 1.0) < 1e-10 "observed_probs must sum to 1"
         new(n_sites, observed_probs)
     end
-end
-
-# # Convert binary string index to actual binary vector
-# function index_to_binary(idx::Int, n_bits::Int)
-#     # idx is 1-based, convert to 0-based for binary representation
-#     binary_val = idx - 1
-#     return [(binary_val >> i) & 1 for i in 0:(n_bits-1)]
-# end
+end;
 
 # Apply error effects to a binary string
 function apply_error_effects(original::Vector{Int}, site::Int, error_type::Int, n_sites::Int)
@@ -148,27 +132,27 @@ function apply_error_effects(original::Vector{Int}, site::Int, error_type::Int, 
     end
     
     return result
-end
+end;
 
 # Convert binary vector back to index
 function binary_to_index(binary_vec::Vector{Int})
-    return sum(binary_vec[i] * 2^(i-1) for i in 1:length(binary_vec)) + 1
-end
+    return sum(binary_vec[i] * 2^(i-1) for i in 1:length(binary_vec))
+end;
 
 # Calculate theoretical probabilities given error parameters
-function calculate_theoretical_probs(p_matrix, model::ErrorModel)
-    n_sites = model.n_sites
-    n_strings = 2^n_sites
+function calculate_theoretical_probs(p_matrix, num_sites, accepted_error_list)
+    n_sites = num_sites
+    # n_strings = 2^n_sites
     
     # assumes p_matrix is a 3Xn_sites matrix
     # p_matrix = (symmetric ? repeat(params, outer = (1,2)) : params)
     
     # Initialize probability array
-    theoretical_probs = zeros(Float64, n_strings)* p_matrix[1,1]
+    theoretical_probs = zeros(Float64, length(accepted_error_list))* p_matrix[1,1]
     
     # Iterate over all possible error configurations
     # For each site, we have 4 possibilities: no error, type 1, type 2, type 3
-    for error_config in 0:(4^n_sites - 1)
+    Threads.@threads for error_config in 0:(4^n_sites - 1)
         # Decode error configuration
         current_config = error_config
         error_prob = 1.0
@@ -197,11 +181,14 @@ function calculate_theoretical_probs(p_matrix, model::ErrorModel)
         # Add this probability to the corresponding final state
         final_index = binary_to_index(current_state)
         # println
-        theoretical_probs[final_index] += error_prob
+        if final_index in accepted_error_list
+            theoretical_probs[findfirst(x -> x == final_index, accepted_error_list)] += error_prob
+            # [final_index] += 
+        end
     end
     
     return theoretical_probs
-end
+end;
 
 # Negative log-likelihood function
 function neg_log_likelihood(params::Any, model::ErrorModel, symmetric::Bool, theoretical_probs_formula, p)
@@ -256,11 +243,11 @@ function neg_log_likelihood(params::Any, model::ErrorModel, symmetric::Bool, the
     # end
     # println(typeof(sum(nll)))
     return sum(nll)
-end
+end;
 
 # Estimate parameters using MLE
 
-function estimate_parameters(model::ErrorModel; initial_guess::Union{Vector{Float64}, Nothing} = nothing, symmetric::Bool = true)
+function estimate_parameters(model::ErrorModel, theorylist; initial_guess::Union{Vector{Float64}, Nothing} = nothing, symmetric::Bool = true)
 
     n_sites = model.n_sites 
     if symmetric
@@ -281,31 +268,132 @@ function estimate_parameters(model::ErrorModel; initial_guess::Union{Vector{Floa
         upper_bounds = ones(3 * Int((n_sites)))
     end
 
-    # p = reshape(Symbolics.variables(:p, 1:(3*n_sites)), (3, n_sites))
-    @variables p[3,1:n_sites]
-    theorylist = calculate_theoretical_probs(p, model::ErrorModel)
-    # p_matrix = rand(3,n_sites);
-    # theoretical_probs = Symbolics.substitute(theorylist, Dict(p => (symmetric ? repeat(p_matrix, outer =(1,2)) : p_matrix)))
-    # theoretical_probs2 = calculate_theoretical_probs(p_matrix, model)
-    # println(all(isapprox.(theoretical_probs, theoretical_probs2)))
+    # @variables p[3,1:n_sites]
+    # theorylist = calculate_theoretical_probs(p, model::ErrorModel, accepted_error_list)
     println("Hi")
     result = optimize(params -> neg_log_likelihood(params, model, symmetric, theorylist, p), lower_bounds, upper_bounds, initial_guess, Fminbox()
-        ,  Optim.Options(show_trace = true, show_every = 1
+        ,  Optim.Options(show_trace = true, show_every = 5
         # , f_reltol=0.01
+        ,outer_iterations = 4
         )
         )
     estimated_params = Optim.minimizer(result)
     return estimated_params, result
 end
 
-plot(cumsum(sort(errorrate_[:,1], rev=true)) , marker=:circle)
-size(errorrate_)
-# utoff_index
 
-model = ErrorModel(num_sites, errorrate_[:,1]);
+
+# errorrate_ = (error_coeffs^-1 * stab_exp_list);
+
+# sort_order = sortperm(errorrate_[:,1], rev=true);
+# cutoff_index = findfirst(x -> x > 0.99, cumsum((errorrate_[:,1])[sort_order]));
+# trunc_errorate = (errorrate_[sort_order])[1:cutoff_index];
+# error_string_num = parse.(Int, replace.(replace.(error_list_string[sort_order], "1"=>"0"), "Z"=>"1"), base=2);
+# trunc_errorstring = parse.( Int , replace.(replace.((error_list_string[sort_order])[1:cutoff_index],  "1"=>"0") , "Z"=>"1") , base=2);
+# trunc_model = ErrorModel(num_sites, trunc_errorate);
+# trunc_estimated_params, trunc_result = estimate_parameters(trunc_model, symmetric=true, trunc_errorstring)
+# trunc_reshape = reshape(trunc_estimated_params, (3, Int(ceil(num_sites/2))));
+
+
+# Initialise
+num_sites = 3;
+# γ, η, ζ = params
+# params = [0.1, 0.99, 0.9];
+# ζ = ∑ αi^2 βi^2
+
+param_matrix = [ [γ, η, ζ] for γ in 0.0:0.05:0.1, η in 0.9:0.05:1.0, ζ in 0.9:0.05:1.0];
+avg_error_Z = zeros(Float64, size(param_matrix));
+avg_error_X = zeros(Float64, size(param_matrix));
+avg_error_Y = zeros(Float64, size(param_matrix));
+max_error_Z = zeros(Float64, size(param_matrix));
+max_error_X = zeros(Float64, size(param_matrix));
+max_error_Y = zeros(Float64, size(param_matrix));
+
+
+stab_list, stab_string = stabaliser_list(num_sites)
+# All possible errors in pauli error map with Just Z errors
+## Note, Is a string!!!!
+error_list_string = ps.op_to_strings(ps.all_z(num_sites))[2];
+error_string_num = parse.(Int, replace.(replace.(error_list_string, "1"=>"0"), "Z"=>"1"), base=2);
+error_list = [ps.Operator(i) for i in error_list_string];
+error_coeffs_inv = (error_coeffs_gen(error_list_string, stab_string, num_sites))^-1;
+trunc_ = false;
+@variables p[3,1:num_sites]
+theorylist = calculate_theoretical_probs(p, num_sites, error_string_num);
+
+for ind in eachindex(param_matrix)
+    println("Calculating for parameter set: ", ind, " of ", length(param_matrix))
+    param = param_matrix[ind];
+    stab_exp, iden_exp = stab_exp_vals(param, num_sites, stab_string);
+    errorrate_ = (error_coeffs_inv * stab_exp)[:,1];
+    if trunc_
+        nothing
+    else
+        model = ErrorModel(num_sites, (errorrate_));
+        estimated_params, result = estimate_parameters(model, theorylist, symmetric=false)
+        println(result)
+        # param_result = reshape(estimated_params, (3, Int(ceil(num_sites/2))))
+        param_result = reshape(estimated_params, (3, num_sites))
+        avg_error_Z[ind], avg_error_X[ind], avg_error_Y[ind] = mean(param_result, dims = 2);
+        max_error_Z[ind], max_error_X[ind], max_error_Y[ind] = maximum(param_result, dims = 2);
+    end
+
+end
+
+
+#heamaps fip the matrix in y axis
+# for eta 0.9
+# p = heatmap();
+eta = 1;
+eta_ind = findfirst(x -> x == eta, 0.9:0.05:1.0);
+p_z = heatmap( (0.9:0.05:1.0),(0:0.05:0.1), avg_error_Z[:,eta_ind,:],  title = "Average P_Z", yaxis= "γ", xaxis = "ζ" );
+p_x = heatmap( (0.9:0.05:1.0),(0:0.05:0.1), avg_error_X[:,eta_ind,:],  title = "Average P_X", yaxis= "γ", xaxis = "ζ" );
+p_y = heatmap( (0.9:0.05:1.0),(0:0.05:0.1), avg_error_Y[:,eta_ind,:],  title = "Average P_Y", yaxis= "γ", xaxis = "ζ" );
+plot(p_z, p_x, p_y, layout = (3,1) , size = (800, 1500), plot_title= "eta = $eta")
+
+p_z2 = heatmap( (0.9:0.05:1.0),(0:0.05:0.1), max_error_Z[:,eta_ind,:],  title = "Max P_Z", yaxis= "γ", xaxis = "ζ" );
+p_x2 = heatmap( (0.9:0.05:1.0),(0:0.05:0.1), max_error_X[:,eta_ind,:],  title = "Max P_X", yaxis= "γ", xaxis = "ζ" );
+p_y2 = heatmap( (0.9:0.05:1.0),(0:0.05:0.1), max_error_Y[:,eta_ind,:],  title = "Max P_Y", yaxis= "γ", xaxis = "ζ" );
+plot(p_z2, p_x2, p_y2, layout = (3,1) , size = (800, 1500), plot_title= "eta = $eta")
+
+# [i[3] for i in param_matrix]
+#for confirming scales
+# heatmap([i[1] for i in param_matrix[:,1,:]])
+
+avg_error_Z[:,1,:]
+param_matrix[:,1,:]
+
+# plot([1 2 3 ; 4 5 6 ; 7 8 9],seriestype=:heatmap)
+
+heatmap([1 1 1 ; 2 2 2 ; 3 3 3]')
+[1 1 1 ; 2 2 2 ; 3 3 3]'
+avg_error_Z
+
+size(stab_exp_vals(param, num_sites, stab_string))
+errorrate_
+plot();
+plot!(trunc_reshape[1,:], seriestype = :line, marker=:circle);
+plot!(trunc_reshape[2,:], seriestype = :line, marker=:circle);
+plot!(trunc_reshape[3,:], seriestype = :line, marker=:circle)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# model.n_sites
+model = ErrorModel(num_sites, (errorrate_[:,1])[sort_order]);
 # Estimate parameters
-estimated_params, result = estimate_parameters(model, symmetric=false)
-estimated_params2, result2 = estimate_parameters(model, symmetric=true)
+# estimated_params, result = estimate_parameters(model, symmetric=false)
+estimated_params2, result2 = estimate_parameters(model, symmetric=true, error_string_num)
 param_result = reshape(estimated_params2, (3, Int(ceil(num_sites/2))))
 # param_result = estimated_params2;
 plot();
@@ -320,8 +408,7 @@ plot!(title= "num sites = $num_sites")
 # plot!(hcat(estimated_params2, (estimated_params2[:,1]))[2,:] , seriestype = :scatter);
 # plot!(hcat(estimated_params2, (estimated_params2[:,1]))[3,:] , seriestype = :scatter)
 # plot!(hcat(estimated_params2, reverse(estimated_params2, dims=2))[2,:], seriestype = :scatter);
-# plot!(hcat(estimated_params2, reverse(estimated_params2, dims=2))[3,:], seriestype = :scatter)
-param_result
+# plot!(hcat(estimated_params2, reverse(estimated_params2, dims=2))[3,:], seriestype = :scatter)param_result
 
 
 # Create symbolic matrix
@@ -368,4 +455,14 @@ param_result
 #     Symbolics.substitute(theorylist[i], Dict(p => p_rand))
 # end
 # Symbolics.substitute(theorylist[8], Dict(p => rand(3,6)))
-sum([1,2,3])
+
+
+
+
+
+# # Convert binary string index to actual binary vector
+# function index_to_binary(idx::Int, n_bits::Int)
+#     # idx is 1-based, convert to 0-based for binary representation
+#     binary_val = idx - 1
+#     return [(binary_val >> i) & 1 for i in 0:(n_bits-1)]
+# end

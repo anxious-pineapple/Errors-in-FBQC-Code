@@ -272,9 +272,9 @@ function estimate_parameters(model::ErrorModel, theorylist; initial_guess::Union
     # theorylist = calculate_theoretical_probs(p, model::ErrorModel, accepted_error_list)
     println("Hi")
     result = optimize(params -> neg_log_likelihood(params, model, symmetric, theorylist, p), lower_bounds, upper_bounds, initial_guess, Fminbox()
-        ,  Optim.Options(show_trace = true, show_every = 5
-        # , f_reltol=0.01
-        ,outer_iterations = 4
+        ,  Optim.Options(show_trace = true, show_every = 1
+        , f_reltol=0.005
+        ,iterations = 6
         )
         )
     estimated_params = Optim.minimizer(result)
@@ -296,19 +296,22 @@ end
 
 
 # Initialise
-num_sites = 3;
+num_sites = 4;
 # γ, η, ζ = params
 # params = [0.1, 0.99, 0.9];
 # ζ = ∑ αi^2 βi^2
 
-param_matrix = [ [γ, η, ζ] for γ in 0.0:0.05:0.1, η in 0.9:0.05:1.0, ζ in 0.9:0.05:1.0];
+param_matrix = [ [γ, η, ζ] for γ in 0.0:0.05:0.1, η in 0.95:0.05:0.95, ζ in 0.95:0.02:0.95];
+
 avg_error_Z = zeros(Float64, size(param_matrix));
 avg_error_X = zeros(Float64, size(param_matrix));
 avg_error_Y = zeros(Float64, size(param_matrix));
 max_error_Z = zeros(Float64, size(param_matrix));
 max_error_X = zeros(Float64, size(param_matrix));
 max_error_Y = zeros(Float64, size(param_matrix));
-
+param_list_Z = [0,0,0]
+param_list_X = [0,0,0]
+param_list_Y = [0,0,0]
 
 stab_list, stab_string = stabaliser_list(num_sites)
 # All possible errors in pauli error map with Just Z errors
@@ -320,25 +323,44 @@ error_coeffs_inv = (error_coeffs_gen(error_list_string, stab_string, num_sites))
 trunc_ = false;
 @variables p[3,1:num_sites]
 theorylist = calculate_theoretical_probs(p, num_sites, error_string_num);
-
+# theorylist[1]
+initial = fill(0.01, (3 * Int(ceil(num_sites/2))));
+# ind = 1
 for ind in eachindex(param_matrix)
     println("Calculating for parameter set: ", ind, " of ", length(param_matrix))
     param = param_matrix[ind];
-    stab_exp, iden_exp = stab_exp_vals(param, num_sites, stab_string);
+    stab_exp, iden_exp = stab_exp_vals(param, num_sites, stab_string)
     errorrate_ = (error_coeffs_inv * stab_exp)[:,1];
     if trunc_
         nothing
     else
         model = ErrorModel(num_sites, (errorrate_));
-        estimated_params, result = estimate_parameters(model, theorylist, symmetric=false)
+        estimated_params, result = estimate_parameters(model, theorylist, symmetric=true, initial_guess = initial);
+        initial = estimated_params;
         println(result)
-        # param_result = reshape(estimated_params, (3, Int(ceil(num_sites/2))))
-        param_result = reshape(estimated_params, (3, num_sites))
-        avg_error_Z[ind], avg_error_X[ind], avg_error_Y[ind] = mean(param_result, dims = 2);
-        max_error_Z[ind], max_error_X[ind], max_error_Y[ind] = maximum(param_result, dims = 2);
+        param_result = reshape(estimated_params, (3, Int(ceil(num_sites/2))))
+        # param_result = reshape(estimated_params, (3, num_sites))
+        # avg_error_Z[ind], avg_error_X[ind], avg_error_Y[ind] = mean(param_result, dims = 2);
+        # max_error_Z[ind], max_error_X[ind], max_error_Y[ind] = maximum(param_result, dims = 2);
+        param_list_Z = hcat(param_list_Z, param_result[1,:]);
+        param_list_X = hcat(param_list_X, param_result[2,:]);
+        param_list_Y = hcat(param_list_Y, param_result[3,:]);
     end
 
 end
+
+plot(param_list_Z[:,2:end])
+plot(param_list_X[:,2:end])
+plot(param_list_Y[:,2:end])
+plot(param_list_Z[:,end]);
+plot!(param_list_X[:,end]);
+plot!(param_list_Y[:,end])
+plot(param_list_Z[:,2], marker=:circle , label = "P_Z");
+plot!(param_list_X[:,2], marker=:circle, label = "P_X");
+plot!(param_list_Y[:,2], marker=:circle , label = "P_Y", legend= :right);
+plot!(title = "\\gamma = 0, \\eta = 1, \\zeta = 0.9, 6 sites", xticks=([1,2,3],["Site 1 & 6", "Site 2 & 5", "Site 3 & 4"]) , xlims = (0.8, 3.2) );
+ylabel!("Error Rate")
+
 
 
 #heamaps fip the matrix in y axis

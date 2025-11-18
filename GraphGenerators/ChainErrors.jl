@@ -14,97 +14,344 @@ macro bind(def, element)
     end
 end
 
-# ╔═╡ 070eb09c-8d78-11f0-268d-d1455f2b426e
-using PlutoUI, Plots
+# ╔═╡ 154b856a-2106-4f96-b7e4-375ec06ad91b
+using PlutoUI, Plots, LinearAlgebra, PlutoTeachingTools
 
+# ╔═╡ 5aaf3751-fe9a-4fb5-8aec-fb8e6b307817
+function mat_return(rel_exp)
+    #rel_exp is relevant expectation vals
+    mat = [rel_exp[1] rel_exp[1] rel_exp[1] rel_exp[1] ;
+    rel_exp[3] -rel_exp[3] rel_exp[3] -rel_exp[3];
+    rel_exp[2]  rel_exp[2] -rel_exp[2] -rel_exp[2];
+    rel_exp[4] -rel_exp[4] -rel_exp[4] rel_exp[4]]
+    return mat/2
+end;
 
-# ╔═╡ 50e62e3d-8883-4bbb-b368-f41181263f7a
-gr()
+# ╔═╡ 1b363070-d5dc-41d6-bda1-b56a828bf812
+function stab_exp(StabBitString, expsDict)
+    l = length(StabBitString)
+    prod = [1 1 1 1]
+    for i in 1:l÷2
+        prod *= mat_return(expsDict[StabBitString[2i-1:2i]])
+    end
+    prod *= transpose([1 0 0 0])
+    return prod[1,1]
+end;
 
-# ╔═╡ 1ac05aab-331f-42e1-ae14-c045abc39294
-@bind γ Slider(0:0.01:0.5; default=0.1, show_value=true)
+# ╔═╡ 98a15c8b-4dfc-4db4-9f0c-5bf79a3d4f1c
+function stabGen(n)
+    stab_gen = []
+    stabs = [[],[],[]]
+    base_list = BitVector(append!([1,0,0,1,1,0],repeat([0,],2(n-2))))
+    #x = 1, z = 2 y = 3, i = 0
+    push!(stab_gen, base_list[3:end])
+    push!(stabs[1], base_list[3:end])
+    for i in 1:n-1
+        base_list = base_list >> 2
+        push!(stab_gen, base_list[3:end])
+        push!(stabs[1], base_list[3:end])
+        push!(stabs[2], stab_gen[end] .⊻ stab_gen[end-1])
+        i>1 ? push!(stabs[3], stab_gen[end] .⊻ stab_gen[end-2]) : nothing
+    end
+    stabs = vcat(stabs...)
+    push!(stabs, stab_gen[1] .⊻ stab_gen[2] .⊻ stab_gen[3])
+    return stab_gen, stabs
+end;
 
-# ╔═╡ 3f695685-74f6-4b5d-baf7-b5bab0d1b701
-@bind ζ Slider(0:0.01:1; default=0.9, show_value=true)
+# ╔═╡ ef402f4d-28d0-425f-be03-860b37298bee
+function DictGen(γ1, η1, ζ1)
+	exp_Dict3l = Dict()
+	exp_Dict3l[BitVector([0, 0])] = [1 0 0 1] * (2*γ1^2*(1-η1) + η1);
+	exp_Dict3l[BitVector([0, 1])] = [(2*γ1^2*(1-η1)) η1*ζ1 η1*ζ1 (2*γ1^2*(1-η1))];
+	exp_Dict3l[BitVector([1, 1])] = [0 -1 1 0] * η1 * ζ1 * 1im;
+	exp_Dict3l[BitVector([1, 0])] = [1 0 0 -1] * η1;
+	return exp_Dict3l
+end;
 
-# ╔═╡ 9c27f470-9d6c-4c2d-9346-1cfdde76517b
-@bind η Slider(0:0.01:1; default=0.9, show_value=true)
-
-# ╔═╡ 0973d303-6b11-4ca7-9fea-363262265ff1
-function stab_to_pauli_pl(stab_list)
-	temp_probs = (1 - stab_list[1] - stab_list[2] - stab_list[3]) .* [1.0,1.0,1.0]
-	temp_probs += 2*stab_list
-	push!(temp_probs, (1+sum(stab_list)))
-	return temp_probs/4
+# ╔═╡ 5596b690-928a-41da-bc8f-4b3488428f2f
+function DictGen2(γ1, η1, D1)
+    exp_Dict4l = Dict()
+    # in order 00->I, 01->X, 10->Z, 11->Y
+    # [_ _ _ _] in order is 00 01 10 11
+    a = η1 + ((1-η1) * γ1^2)
+    b = (2*η1*sqrt(D1*(1-D1))) + ((1-η1) * γ1^2)
+    exp_Dict4l[BitVector([0, 0])] = [a b b a]
+    exp_Dict4l[BitVector([0, 1])] = [b a a b]
+    exp_Dict4l[BitVector([1, 1])] = [0 -1 1 0] * η1 * (2*D1 - 1) * 1im
+    exp_Dict4l[BitVector([1, 0])] = [1 0 0 -1] * η1 * (2*D1 - 1)
+    return exp_Dict4l
 end
 
-# ╔═╡ 6eb570aa-d5f9-40e5-84ef-011da2986164
-function out_pauli_pl(in_pauli)
-	t_8inv = sum(in_pauli.^2) + (2*sum(in_pauli[3:4])*sum(in_pauli[1:2])) + 2*(prod(in_pauli[3:4])+prod(in_pauli[1:2]))
-	p1, p2, p3, p4 = in_pauli
-	theory_probs = [ (p1+p2)*(p3+p4) + (p1-p2)*(p3-p4) ,
-		(p1+p2)*(p3+p4) - (p1-p2)*(p3-p4), 
-		2*(p1*p2 + p3*p4) , 
-		sum(in_pauli.^2) ]
-	return theory_probs * t_8inv
+# ╔═╡ 484bfc75-827c-4152-b2c6-7b255893655b
+md"""
+n: $(@bind n Slider(3:50; default=10, show_value=true))  
+
+γ: $(@bind γ Slider(0:0.01:0.5; default=0.1, show_value=true))  
+η: $(@bind η Slider(0.7:0.01:1; default=0.9, show_value=true))
+ζ or D: $(@bind ζ Slider(1:-0.01:0.7; default=0.9, show_value=true))    
+"""
+
+# ╔═╡ 1cc0fadb-a56c-4325-9445-c1fa98b19edb
+DictGen2(γ, η, ζ)
+
+# ╔═╡ 9ff9e712-bbaa-11f0-1a55-49001255a742
+# ╠═╡ disabled = true
+#=╠═╡
+
+
+# n = 10;
+begin 
+	exp_Dict3l = DictGen2(γ, η, ζ);
+	norm_ = stab_exp(BitVector(repeat([0,],2n)), exp_Dict3l);
+	stabVal = [];
+	for stab in stabGen(n)[2]
+	    push!(stabVal, abs(stab_exp(stab, exp_Dict3l)))
+	end
+	stabVal/= norm_;
+	
+	A = zeros(Int, 3n, 3n);
+	I_diag = zeros(Int, 3n, 3n);
+	for i in 1:n-1
+	
+	    #block 1
+	    # i 2 to n-1
+	    if i == 1
+	        A[i, 3(i-1)+1:3i] = [0 1 1]
+	        A[i, 3i+1:3(i+1)] = [0 0 1]
+	        A[n, end-5:end] = [0 0 1 0 1 1]
+	    else 
+	        A[i, 3(i-1)+1:3i] = [1 0 0]
+	        A[i, 3(i-2)+1:3(i-1)] = [0 0 1]
+	        A[i, 3i+1:3(i+1)] = [0 0 1]
+	    end
+	
+	    #block 2
+	    A[n+i, 3(i-1)+1:3i] = [0 1 0]
+	    A[n+i, 3i+1:3(i+1)] = [0 1 0]
+	    i+2<=n ? A[n+i, 3(i+1)+1:3(i+2)] = [0 0 1] : nothing
+	    i-1 > 0 ? A[n+i, 3(i-2)+1:3(i-1)] = [0 0 1] : nothing
+	
+	    #block 3
+	    if i == (n-1)
+	        nothing
+	    else
+	        if i == 1
+	            A[2n-1+i, 3(i-1)+1:3i] = [0 1 1]
+	        else
+	            A[2n-1+i, 3(i-1)+1:3i] = [1 0 0]
+	        end
+	        # A[2n-1+i, 3i+1:3(i+1)] = [1 0 0]
+	        if i == n-2
+	            A[2n-1+i, 3(i+1)+1:3(i+2)] = [0 1 1]
+	        else
+	            A[2n-1+i, 3(i+1)+1:3(i+2)] = [1 0 0]
+	        end
+	        i+3<= n ? A[2n-1+i, 3(i+2)+1:3(i+3)] = [0 0 1] : nothing
+	        i-1 > 0 ? A[2n-1+i, 3(i-2)+1:3(i-1)] = [0 0 1] : nothing
+	    end
+	
+	    I_diag[3i-2:3i ,3i-2:3i ] = ones(Int, 3, 3) - I(3)
+	end 
+	I_diag[3n-2:3n ,3n-2:3n ] = ones(Int, 3, 3) - I(3);
+	I_diag = I_diag[2:end-1, 2:end-1];
+	# Y X Y Z
+	A[3n-2,1:12] = [0 1 0 1 0 0 0 1 0 0 0 1];
+	A = A[1:end-2, 1:end .!= 3n-2][:,2:end];
+	# rank(A) == 3n-2 
+	# b = repeat([0.78, 0.72, 0.68], n)
+	unlog = exp.(inv(A) * log.(stabVal));
+	err = (ones(3n-2) - unlog)/2 ;
+	error_mat = reshape(insert!(insert!(inv(I_diag) * err, 1, 0), 3n -2, 0), (3, :));
 end
 
-# ╔═╡ 74be0065-c2a6-4900-95d5-46484a260c07
-#X,Y,Z , I is normalised to 1
+
+  ╠═╡ =#
+
+# ╔═╡ 5acc0b05-c8fa-40f8-8ffa-d3559a442a54
 begin
-	N_1inv = ( η + (2 * (1-η) * γ^2) )^(-2)
-	stab_in =  [ (ζ*η^2 + (4* (1-η)^2 *γ^4))*N_1inv ,
-				η^2 * (ζ) * N_1inv,
-				η^2*N_1inv
-	]
-	
-	N_Tinv =  ( (32* (1-η)^2 *γ^4) + (16 * (1-η) * η * γ^2) + (η^2))^(-1)
-	stab_out =  [ (ζ^2*η^4*(N_Tinv) + (4* (1-η)^2 *γ^4))*N_1inv ,
-				η^4 * (ζ^2) * N_1inv*N_Tinv,
-				η^4*N_1inv*N_Tinv
-	]
+	exp_Dict4l = DictGen2(γ, η, ζ);
+    norm_I = stab_exp(BitVector(repeat([0,],2n)), exp_Dict4l);
+    stabVal = [];
+    for stab in stabGen(n)[2]
+        push!(stabVal, abs(stab_exp(stab, exp_Dict4l)))
+    end
+    stabVal/= norm_I;
+    # stabs XZIII, ZXZII, IZXZI, IIZXZ, YYZII
+    # A = [1 0 0 0 0; 0 0 1 1 0; 1 0 0 0 1; 0 0 0 2 0;  0 1 0 1 0];
+    # I_diag = [0 1 1 0 0; 1 0 1 0 0; 1 1 0 0 0 ; 0 0 0 1 0; 0 0 0 0 1]; 
 
-	w = 700
-	p1 = plot(stab_in, marker=:circle, label="In");
-	plot!(p1, stab_out, marker=:square, label="Out", ylims=(0,1.1), xticks=(1:3, ["<X>","<Y>","<Z>"]), legend=:outertopright, 
-		ylabel="Stabaliser Expectation Value", title="Comparison of stabaliser Measurements")
+    A = zeros(Int, 3n, 3n);
+    I_diag = zeros(Int, 3n, 3n);
+    for i in 1:n-1
+        #block 1
+        # i 2 to n-1
+        # -------ZXZ------ centred at zXz
+        A[i, 3(i-1)+1:3i] = [1 0 0]
+        A[i, 3i+1:3(i+1)] = [0 0 1]
+        if i == 1
+            A[n, end-5:end] = [1 1 0 1 0 0]
+        else
+            A[i, 3(i-2)+1:3(i-1)] = [0 0 1]
+        end
 
-	p2 = plot(stab_to_pauli_pl(stab_in),  marker=:circle, label="In")
-	plot!(p2, stab_to_pauli_pl(stab_out),  marker=:square, label="Out")
-	plot!(p2, out_pauli_pl(stab_to_pauli_pl(stab_in)),  marker=(:star,6), label="Out Expct", ylims=(0,1.1), xticks=(1:4, ["Px","Py","Pz","Po"]), legend=:outertopright,
-	ylabel="Probability", title="Comparing Pauli Error Rates for γ=$γ, η=$η, ζ=$ζ")
+        #block 2
+        # zYyz centred at Y
+        A[n+i, 3(i-1)+1:3i] = [0 1 0]
+        A[n+i, 3i+1:3(i+1)] = [0 1 0]
+        i+2<=n ? A[n+i, 3(i+1)+1:3(i+2)] = [0 0 1] : nothing
+        i-1 >= 1 ? A[n+i, 3(i-2)+1:3(i-1)] = [0 0 1] : nothing
 
+        #block 3
+        # zXixz centred at X
+        if i == (n-1)
+            nothing
+        else
+            A[2n-1+i, 3(i-1)+1:3i] = [1 0 0]
+            A[2n-1+i, 3(i+1)+1:3(i+2)] = [1 0 0]
+            i+3 <= n ? A[2n-1+i, 3(i+2)+1:3(i+3)] = [0 0 1] : nothing
+            # i+3 == n ? A[2n-1+i, 3(i+2)+1:3(i+3)] = [1 1 0] : nothing
+            i-1 >= 1 ? A[2n-1+i, 3(i-2)+1:3(i-1)] = [0 0 1] : nothing
+            # i-1 == 1 ? A[2n-1+i, 3(i-2)+1:3(i-1)] = [1 1 0] : nothing
+        end
 
-	plot(p2,p1, layout=(2,1), size=(w,w))
+        I_diag[3i-2:3i ,3i-2:3i ] = ones(Int, 3, 3) - I(3)
+    end 
 
-	
+    I_diag[3n-2:3n ,3n-2:3n ] = ones(Int, 3, 3) - I(3);
+    I_diag = I_diag[1:end .!= 4, 1:end .!= 4];
+    I_diag = I_diag[1:end .!= end-3, 1:end .!= end-3];
+    # I_diag
+    # Y X Y Z
+    A[3n-2,1:12] = [0 1 0 1 0 0 0 1 0 0 0 1];
+    for i in 1:3n
+        if A[i,6] == 1
+            A[i, 4:6] = [1 1 0]
+        end
+        if A[i,end-3] == 1
+            A[i, end-5:end-3] = [1 1 0]
+        end
+    end
+    # A
+    A = A[:,1:end .!= end-3] ;
+    A = A[:, 1:end .!= 6];
+    A = A[1:end-2, :]
 
-	
+    # println(stabVal)
+    unlog = exp.(inv(A) * log.(stabVal));
+    err = (ones(3n-2) - unlog)./2 ;
+    error_mat = inv(I_diag) * err
+    insert!(error_mat, 6, 0)
+    insert!(error_mat, 3n-3, 0)
+	error_mat = reshape(error_mat, (3,:))
+    # return error_mat, norm_I, unlog
 end
 
-# ╔═╡ d07752d0-53e2-46d8-acb2-6c8a07ca2f96
-list_pred = out_pauli_pl(stab_to_pauli_pl(stab_in));
+# ╔═╡ a370e8e1-379b-42ac-8c88-9d69a5c21655
+begin
+	plot(error_mat'[:,1], marker=(:circle,4), 
+	# ylims=(-0.01,0.5), 
+	# title = "? Level Emitter ζ=$ζ , γ=$γ , η=$η")
+	title = error_mat'[4,:])
+	# plot(error_mat2', marker = (:star,3))
+end
 
-# ╔═╡ 604c603f-a73c-4921-a2f4-16a308fd1555
+# ╔═╡ 1a46b904-6784-490c-9810-481472c2362c
+# all(isapprox.(error_mat[2:3,:] ,0, atol=1e-10));
+error_mat'[4,1] = error_mat'[5,1]
 
+# ╔═╡ e3a328bb-e312-416b-b7de-32be37703b9a
+plot(error_mat', marker=(:circle,4))
 
-# ╔═╡ fcfaed30-130a-4cbe-b62f-72c01a2b77bb
-list_num = stab_to_pauli_pl(stab_out);
+# ╔═╡ b7609434-c8e8-4d5c-b0b5-457b5c73f617
+begin
+	exp_Dict3l = DictGen(γ, η, ζ);
+    norm_I2 = stab_exp(BitVector(repeat([0,],2n)), exp_Dict3l);
+    stabVal2 = [];
+    for stab in stabGen(n)[2]
+        push!(stabVal2, abs(stab_exp(stab, exp_Dict3l)))
+    end
+    stabVal2/= norm_I2;
+    # stabs XZIII, ZXZII, IZXZI, IIZXZ, YYZII
+    # A = [1 0 0 0 0; 0 0 1 1 0; 1 0 0 0 1; 0 0 0 2 0;  0 1 0 1 0];
+    # I_diag = [0 1 1 0 0; 1 0 1 0 0; 1 1 0 0 0 ; 0 0 0 1 0; 0 0 0 0 1]; 
 
-# ╔═╡ 790dfce5-4ace-4942-9efc-3e260c84f0a7
-list_pred
+    A2 = zeros(Int, 3n, 3n);
+    I_diag2 = zeros(Int, 3n, 3n);
+    for i in 1:n-1
+        #block 1
+        # i 2 to n-1
+        # -------ZXZ------ centred at zXz
+        A2[i, 3(i-1)+1:3i] = [1 0 0]
+        A2[i, 3i+1:3(i+1)] = [0 0 1]
+        if i == 1
+            A2[n, end-5:end] = [1 1 0 1 0 0]
+        else
+            A2[i, 3(i-2)+1:3(i-1)] = [0 0 1]
+        end
 
-# ╔═╡ 9a9e33c3-5b05-441c-87fb-1f6e63b2ea49
-100*abs.(list_num-list_pred)./list_pred
+        #block 2
+        # zYyz centred at Y
+        A2[n+i, 3(i-1)+1:3i] = [0 1 0]
+        A2[n+i, 3i+1:3(i+1)] = [0 1 0]
+        i+2<=n ? A2[n+i, 3(i+1)+1:3(i+2)] = [0 0 1] : nothing
+        i-1 >= 1 ? A2[n+i, 3(i-2)+1:3(i-1)] = [0 0 1] : nothing
+
+        #block 3
+        # zXixz centred at X
+        if i == (n-1)
+            nothing
+        else
+            A2[2n-1+i, 3(i-1)+1:3i] = [1 0 0]
+            A2[2n-1+i, 3(i+1)+1:3(i+2)] = [1 0 0]
+            i+3 <= n ? A2[2n-1+i, 3(i+2)+1:3(i+3)] = [0 0 1] : nothing
+            # i+3 == n ? A[2n-1+i, 3(i+2)+1:3(i+3)] = [1 1 0] : nothing
+            i-1 >= 1 ? A2[2n-1+i, 3(i-2)+1:3(i-1)] = [0 0 1] : nothing
+            # i-1 == 1 ? A[2n-1+i, 3(i-2)+1:3(i-1)] = [1 1 0] : nothing
+        end
+
+        I_diag2[3i-2:3i ,3i-2:3i ] = ones(Int, 3, 3) - I(3)
+    end 
+
+    I_diag2[3n-2:3n ,3n-2:3n ] = ones(Int, 3, 3) - I(3);
+    I_diag2 = I_diag2[1:end .!= 4, 1:end .!= 4];
+    I_diag2 = I_diag2[1:end .!= end-3, 1:end .!= end-3];
+    # I_diag
+    # Y X Y Z
+    A2[3n-2,1:12] = [0 1 0 1 0 0 0 1 0 0 0 1];
+    for i in 1:3n
+        if A2[i,6] == 1
+            A2[i, 4:6] = [1 1 0]
+        end
+        if A2[i,end-3] == 1
+            A2[i, end-5:end-3] = [1 1 0]
+        end
+    end
+    # A
+    A2 = A2[:,1:end .!= end-3] ;
+    A2 = A2[:, 1:end .!= 6];
+    A2 = A2[1:end-2, :]
+
+    # println(stabVal)
+    unlog2 = exp.(inv(A2) * log.(stabVal2));
+    err2 = (ones(3n-2) - unlog2)./2 ;
+    error_mat2 = inv(I_diag2) * err2
+    insert!(error_mat2, 6, 0)
+    insert!(error_mat2, 3n-3, 0)
+	error_mat2 = reshape(error_mat2, (3,:))
+    # return error_mat, norm_I, unlog
+end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+PlutoTeachingTools = "661c6b06-c737-4d37-b85c-46df65de6f69"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 
 [compat]
 Plots = "~1.40.13"
+PlutoTeachingTools = "~0.4.6"
 PlutoUI = "~0.7.71"
 """
 
@@ -114,7 +361,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "15c4d5bcab3aa3caf739156ab2f7690ada054ccd"
+project_hash = "3c06b305f747be67b7f88ad6202066e0b47ee2a6"
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
@@ -718,6 +965,12 @@ version = "1.40.13"
     ImageInTerminal = "d8c32880-2388-543b-8c61-d9f865259254"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
+[[deps.PlutoTeachingTools]]
+deps = ["Downloads", "HypertextLiteral", "Latexify", "Markdown", "PlutoUI"]
+git-tree-sha1 = "dacc8be63916b078b592806acd13bb5e5137d7e9"
+uuid = "661c6b06-c737-4d37-b85c-46df65de6f69"
+version = "0.4.6"
+
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Downloads", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
 git-tree-sha1 = "8329a3a4f75e178c11c1ce2342778bcbbbfa7e3c"
@@ -1216,18 +1469,19 @@ version = "1.9.2+0"
 """
 
 # ╔═╡ Cell order:
-# ╠═070eb09c-8d78-11f0-268d-d1455f2b426e
-# ╠═50e62e3d-8883-4bbb-b368-f41181263f7a
-# ╠═1ac05aab-331f-42e1-ae14-c045abc39294
-# ╠═3f695685-74f6-4b5d-baf7-b5bab0d1b701
-# ╠═9c27f470-9d6c-4c2d-9346-1cfdde76517b
-# ╟─0973d303-6b11-4ca7-9fea-363262265ff1
-# ╟─6eb570aa-d5f9-40e5-84ef-011da2986164
-# ╠═74be0065-c2a6-4900-95d5-46484a260c07
-# ╠═d07752d0-53e2-46d8-acb2-6c8a07ca2f96
-# ╠═604c603f-a73c-4921-a2f4-16a308fd1555
-# ╟─fcfaed30-130a-4cbe-b62f-72c01a2b77bb
-# ╠═790dfce5-4ace-4942-9efc-3e260c84f0a7
-# ╠═9a9e33c3-5b05-441c-87fb-1f6e63b2ea49
+# ╠═154b856a-2106-4f96-b7e4-375ec06ad91b
+# ╟─5aaf3751-fe9a-4fb5-8aec-fb8e6b307817
+# ╟─1b363070-d5dc-41d6-bda1-b56a828bf812
+# ╟─98a15c8b-4dfc-4db4-9f0c-5bf79a3d4f1c
+# ╟─ef402f4d-28d0-425f-be03-860b37298bee
+# ╟─5596b690-928a-41da-bc8f-4b3488428f2f
+# ╟─484bfc75-827c-4152-b2c6-7b255893655b
+# ╠═a370e8e1-379b-42ac-8c88-9d69a5c21655
+# ╠═1a46b904-6784-490c-9810-481472c2362c
+# ╠═1cc0fadb-a56c-4325-9445-c1fa98b19edb
+# ╟─9ff9e712-bbaa-11f0-1a55-49001255a742
+# ╠═e3a328bb-e312-416b-b7de-32be37703b9a
+# ╠═5acc0b05-c8fa-40f8-8ffa-d3559a442a54
+# ╠═b7609434-c8e8-4d5c-b0b5-457b5c73f617
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

@@ -14,23 +14,22 @@ macro bind(def, element)
     end
 end
 
-# ╔═╡ 070eb09c-8d78-11f0-268d-d1455f2b426e
+# ╔═╡ f6e963c3-3ca0-4c23-b4e6-ffad0621669c
 using PlutoUI, Plots
 
+# ╔═╡ 8b1b00a2-b0bf-49d9-962e-feae49e43f43
+plotly()
 
-# ╔═╡ 50e62e3d-8883-4bbb-b368-f41181263f7a
-gr()
-
-# ╔═╡ 1ac05aab-331f-42e1-ae14-c045abc39294
+# ╔═╡ 87ed7143-5f93-42b0-a4f6-82400fc66b2f
 @bind γ Slider(0:0.01:0.5; default=0.1, show_value=true)
 
-# ╔═╡ 3f695685-74f6-4b5d-baf7-b5bab0d1b701
-@bind ζ Slider(0:0.01:1; default=0.9, show_value=true)
+# ╔═╡ 615f9d76-dff6-48f0-88c0-7ad251a78275
+@bind ζ Slider(1:-0.01:0.7; default=0.9, show_value=true)
 
-# ╔═╡ 9c27f470-9d6c-4c2d-9346-1cfdde76517b
+# ╔═╡ edb4d0e9-cb85-457b-8302-8c2d6a64ab9d
 @bind η Slider(0:0.01:1; default=0.9, show_value=true)
 
-# ╔═╡ 0973d303-6b11-4ca7-9fea-363262265ff1
+# ╔═╡ a3aef730-2c34-466c-af05-1fab01a47ade
 function stab_to_pauli_pl(stab_list)
 	temp_probs = (1 - stab_list[1] - stab_list[2] - stab_list[3]) .* [1.0,1.0,1.0]
 	temp_probs += 2*stab_list
@@ -38,7 +37,7 @@ function stab_to_pauli_pl(stab_list)
 	return temp_probs/4
 end
 
-# ╔═╡ 6eb570aa-d5f9-40e5-84ef-011da2986164
+# ╔═╡ 825feec6-54be-4222-8d06-df1338cbcf75
 function out_pauli_pl(in_pauli)
 	t_8inv = sum(in_pauli.^2) + (2*sum(in_pauli[3:4])*sum(in_pauli[1:2])) + 2*(prod(in_pauli[3:4])+prod(in_pauli[1:2]))
 	p1, p2, p3, p4 = in_pauli
@@ -49,53 +48,48 @@ function out_pauli_pl(in_pauli)
 	return theory_probs * t_8inv
 end
 
-# ╔═╡ 74be0065-c2a6-4900-95d5-46484a260c07
-#X,Y,Z , I is normalised to 1
-begin
-	N_1inv = ( η + (2 * (1-η) * γ^2) )^(-2)
-	stab_in =  [ (ζ*η^2 + (4* (1-η)^2 *γ^4))*N_1inv ,
-				η^2 * (ζ) * N_1inv,
-				η^2*N_1inv
-	]
-	
-	N_Tinv =  ( (32* (1-η)^2 *γ^4) + (16 * (1-η) * η * γ^2) + (η^2))^(-1)
-	stab_out =  [ (ζ^2*η^4*(N_Tinv) + (4* (1-η)^2 *γ^4))*N_1inv ,
-				η^4 * (ζ^2) * N_1inv*N_Tinv,
-				η^4*N_1inv*N_Tinv
-	]
+# ╔═╡ d86addaa-b159-4580-8f37-4630990246ce
+function pauli_err_fusion(gamma, zeta, eta)
+    N_1inv = ( η + (2 * (1-η) * γ^2) )^(-2)
+    stab_in =  [ (ζ*η^2 + (4* (1-η)^2 *γ^4))*N_1inv ,
+                η^2 * (ζ) * N_1inv,
+                η^2*N_1inv
+    ]
 
-	w = 700
-	p1 = plot(stab_in, marker=:circle, label="In");
-	plot!(p1, stab_out, marker=:square, label="Out", ylims=(0,1.1), xticks=(1:3, ["<X>","<Y>","<Z>"]), legend=:outertopright, 
-		ylabel="Stabaliser Expectation Value", title="Comparison of stabaliser Measurements")
-
-	p2 = plot(stab_to_pauli_pl(stab_in),  marker=:circle, label="In")
-	plot!(p2, stab_to_pauli_pl(stab_out),  marker=:square, label="Out")
-	plot!(p2, out_pauli_pl(stab_to_pauli_pl(stab_in)),  marker=(:star,6), label="Out Expct", ylims=(0,1.1), xticks=(1:4, ["Px","Py","Pz","Po"]), legend=:outertopright,
-	ylabel="Probability", title="Comparing Pauli Error Rates for γ=$γ, η=$η, ζ=$ζ")
+    N_Tinv =  ( (32* (1-η)^2 *γ^4) + (16 * (1-η) * η * γ^2) + (η^2))^(-1)
+    stab_out =  [ (ζ^2*η^4*(N_Tinv) + (4* (1-η)^2 *γ^4))*N_1inv ,
+                η^4 * (ζ^2) * N_1inv*N_Tinv,
+                η^4*N_1inv*N_Tinv
+    ]
 
 
-	plot(p2,p1, layout=(2,1), size=(w,w))
+    px, py, pz, po = stab_to_pauli_pl(stab_in)
+    p_oz = po + pz
+    m_oz = po - pz
+    p_xy = px + py
+    m_xy = px - py
+    Px, Py, Pz, Po = stab_to_pauli_pl(stab_out)
+    P_oz = Po + Pz
+    M_oz = Po - Pz
+    P_xy = Px + Py
+    M_xy = Px - Py
 
-	
-
-	
+    po_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) + ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
+    pz_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) - ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
+    px_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) + ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
+    py_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) - ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
+    return (0.5 .* [px_, py_, pz_, po_])
 end
 
-# ╔═╡ d07752d0-53e2-46d8-acb2-6c8a07ca2f96
-list_pred = out_pauli_pl(stab_to_pauli_pl(stab_in));
+# ╔═╡ 2d6838f8-09ad-43d0-b463-3645aa1b5956
+pauli_err_fusion(γ, ζ, η)
 
-# ╔═╡ 604c603f-a73c-4921-a2f4-16a308fd1555
-
-
-# ╔═╡ fcfaed30-130a-4cbe-b62f-72c01a2b77bb
-list_num = stab_to_pauli_pl(stab_out);
-
-# ╔═╡ 790dfce5-4ace-4942-9efc-3e260c84f0a7
-list_pred
-
-# ╔═╡ 9a9e33c3-5b05-441c-87fb-1f6e63b2ea49
-100*abs.(list_num-list_pred)./list_pred
+# ╔═╡ 874afd3b-8dfc-4056-ae03-53f4675bb811
+begin
+	plot(pauli_err_fusion(γ, ζ, η))
+	plot!(xticks=(1:4, ["Px","Py","Pz","Po"]), legend=:outertopright, marker=(:star,6), ylims=(0,1.1),
+	ylabel="Probability", title="Comparing Pauli Error Rates for γ=$γ, η=$η, ζ=$ζ")
+end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1216,18 +1210,15 @@ version = "1.9.2+0"
 """
 
 # ╔═╡ Cell order:
-# ╠═070eb09c-8d78-11f0-268d-d1455f2b426e
-# ╠═50e62e3d-8883-4bbb-b368-f41181263f7a
-# ╠═1ac05aab-331f-42e1-ae14-c045abc39294
-# ╠═3f695685-74f6-4b5d-baf7-b5bab0d1b701
-# ╠═9c27f470-9d6c-4c2d-9346-1cfdde76517b
-# ╟─0973d303-6b11-4ca7-9fea-363262265ff1
-# ╟─6eb570aa-d5f9-40e5-84ef-011da2986164
-# ╠═74be0065-c2a6-4900-95d5-46484a260c07
-# ╠═d07752d0-53e2-46d8-acb2-6c8a07ca2f96
-# ╠═604c603f-a73c-4921-a2f4-16a308fd1555
-# ╟─fcfaed30-130a-4cbe-b62f-72c01a2b77bb
-# ╠═790dfce5-4ace-4942-9efc-3e260c84f0a7
-# ╠═9a9e33c3-5b05-441c-87fb-1f6e63b2ea49
+# ╠═f6e963c3-3ca0-4c23-b4e6-ffad0621669c
+# ╠═8b1b00a2-b0bf-49d9-962e-feae49e43f43
+# ╠═87ed7143-5f93-42b0-a4f6-82400fc66b2f
+# ╠═615f9d76-dff6-48f0-88c0-7ad251a78275
+# ╠═edb4d0e9-cb85-457b-8302-8c2d6a64ab9d
+# ╟─a3aef730-2c34-466c-af05-1fab01a47ade
+# ╟─825feec6-54be-4222-8d06-df1338cbcf75
+# ╟─d86addaa-b159-4580-8f37-4630990246ce
+# ╟─2d6838f8-09ad-43d0-b463-3645aa1b5956
+# ╠═874afd3b-8dfc-4056-ae03-53f4675bb811
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

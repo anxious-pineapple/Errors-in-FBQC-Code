@@ -11,7 +11,7 @@ using LinearAlgebra, Statistics, StatsBase
 using Base.Threads
 using CSV
 # Initialise
-num_sites = 12;
+num_sites = 15;
 Stab_gen_list = [];
 Stab_list = [];
 
@@ -70,7 +70,7 @@ end
 η = 0.98;
 # ζ = ∑ αi^2 βi^2
 ζ = 0.9;
-
+# rank(error_coeffs)
 # Construct vectors of expectation value of stabalisers
 stab_exp_list = zeros(2^num_sites, 1);
 for i in eachindex(Stab_list_string)
@@ -96,6 +96,8 @@ end
     
 #normalise stabilizer expectation values by identity
 stab_exp_list = abs.(stab_exp_list / stab_exp_list[1]);
+pretty_table([Stab_list_string[1:200] stab_exp_list[1:200]], header=["Stab", "Probability"], title="Stab exps", display_size = (-1, -1))
+
 
 errorrate = (error_coeffs^-1 * stab_exp_list);
 # can check 

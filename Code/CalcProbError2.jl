@@ -199,7 +199,7 @@ end
 Stab_list_string = [ps.op_to_strings(i)[2][1] for i in Stab_list]
 
 
-γ = 0.0
+γ = 0.1
 #0 and 0.1
 η = 0.9
 # 0.9 and 0.95 and 0.99
@@ -254,6 +254,8 @@ for i in eachindex(Stab_list_string)
         A[i,j] += coeff
     end
 end
+
+
 # Stab_list_string[1][1] == '1'
 # any(A .== 0)
 # Check if there are any zeros in the matrix
@@ -268,6 +270,7 @@ sorted_errorrate = p[sortedindices]
 sorted_error_list_string = error_list_string[sortedindices]
 pretty_table([sorted_error_list_string[128:200] sorted_errorrate[128:200]], header=["Error", "Probability"], title="Pauli error map (sorted)", display_size = (-1, -1))
 
+sum( sorted_errorrate)
 # dict_ghzerr= Dict(zip(sorted_error_list_string, sorted_errorrate))
 
 ###

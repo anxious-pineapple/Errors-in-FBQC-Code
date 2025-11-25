@@ -336,18 +336,22 @@ function return_errors_only4test(γ, η, ζ)
     return err
 end
 
-γ, η, ζ = (0.2,0.99,0.9)
+γ, η, ζ = (0.5,1,1)
 n = 7
-d_list = 0.7:0.01:0.999
+η_list = 0.7:0.01:0.999
 z_list = []
 x_list = []
-for d in d_list
-    push!(z_list, return_errors(γ, η, d, 3, 'X')[4,3])
-    push!(x_list, return_errors(γ, η, d, 4, 'Z')[4,1])
+for η in η_list
+    push!(z_list, return_errors(γ, η, 1, 3, 'X')[4,3])
+    push!(x_list, return_errors(γ, η, 1, 4, 'Z')[4,1])
 end
-plot!(1 .-d_list, z_list, label="3L Z error η = $η", marker=:circle)
-plot!(1 .-d_list, x_list, label="4L X error η = $η", marker=:star);
+plot!(η_list, z_list, label="3L Z error γ = $γ", marker=:circle);
+plot!(η_list, x_list, label="4L X error γ = $γ", marker=:star)
 
 
+plot(z_list - x_list)
+
+all(x_list .== 0 )
+all(z_list .== 0 )
 plot!(yscale=:log10, xscale=:log10)
-plot!(ylabel= "Probability", xlabel = "1 - D/ζ", title = "Comparing main emmitter errors for γ = $γ")
+plot!(ylabel= "Probability", xlabel = "η", title = "Comparing main emmitter errors for diff γ ")

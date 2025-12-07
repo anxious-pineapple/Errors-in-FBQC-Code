@@ -1,4 +1,5 @@
 ### A Pluto.jl notebook ###
+## Pluto nb for pauli errors along chain
 # v0.19.47
 
 using Markdown
@@ -249,7 +250,7 @@ end
 # ╔═╡ a370e8e1-379b-42ac-8c88-9d69a5c21655
 begin
 	plot(error_mat'[:,1], marker=(:circle,4), 
-	# ylims=(-0.01,0.5), 
+	# ylims=(-0.01,0.15), 
 	# title = "? Level Emitter ζ=$ζ , γ=$γ , η=$η")
 	title = error_mat'[4,:])
 	# plot(error_mat2', marker = (:star,3))

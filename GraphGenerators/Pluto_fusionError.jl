@@ -24,7 +24,7 @@ plotly()
 @bind γ Slider(0:0.01:0.5; default=0.1, show_value=true)
 
 # ╔═╡ 615f9d76-dff6-48f0-88c0-7ad251a78275
-@bind ζ Slider(1:-0.01:0.7; default=0.9, show_value=true)
+@bind ζ Slider(1:-0.01:0; default=0.9, show_value=true) #D
 
 # ╔═╡ edb4d0e9-cb85-457b-8302-8c2d6a64ab9d
 @bind η Slider(0:0.01:1; default=0.9, show_value=true)
@@ -49,7 +49,7 @@ function out_pauli_pl(in_pauli)
 end
 
 # ╔═╡ d86addaa-b159-4580-8f37-4630990246ce
-function pauli_err_fusion(gamma, zeta, eta)
+function pauli_err_fusion(γ, η, ζ)
     N_1inv = ( η + (2 * (1-η) * γ^2) )^(-2)
     stab_in =  [ (ζ*η^2 + (4* (1-η)^2 *γ^4))*N_1inv ,
                 η^2 * (ζ) * N_1inv,
@@ -83,34 +83,40 @@ end
 
 # ╔═╡ 8e8e4261-ac9c-4171-a4c5-8a5e2c4a524a
 function pauli_err_fusion4(γ, η, D)
-    trace_2 = η^2 * ( 0.25 + (D*(1-D)))
-	trace_2 += 2 * (1-η)^2 * γ^4
-	trace_2 += 4 * η * (1-η) * γ^2 * sqrt(D*(1-D)) 
-	B = 4 * η * (1-η) * γ^2 * sqrt(D*(1-D)) 
-	B += 2 * (1-η)^2 * γ^4
-	B += η^2 * sqrt(D*(1-D))
-	B *= 2
-	c = η + ((1-η) * γ^2)
-	d = (2*η*sqrt(D*(1-D))) + ((1-η) * γ^2)
-	e = η*((2*D)-1)
-	C_A = η^2 * ( (D*(1-D)) - 0.25)
+	# η = 0.9
+	γ_2 = γ^2
 	
-	II_in = c^2 + d^2
-	stab_in =  [ c^2 + d^2 ,
-	            e^2,
-	            e^2
-	]
-	stab_in /= II_in
+	η_tilde = (1-η) * γ_2
 	
-	# X, Y, Z
-	II = 1 + (d/c)^2 + (2*d*B/(trace_2*c))
-	stab_out =  [ (1 + (d/c)^2 + (2*d*B/(trace_2*c))) ,
-	            -(e^2 * C_A/ trace_2),
-	            -(e^2 * C_A/ trace_2)
-	]
-	stab_out /= II
+	k = sqrt(4*D*(1-D))
+	N_2 = 1 + k^2
+	
+	
+	B = (2*η*η_tilde)
+	ApC =  η^2 + (4*B) + (2* B^2)
+	
+	αpϵ = (ApC * N_2^2) + (4*k^2 *η^2) + (8*k*N_2*B)
+	δpχ = (η^2 * N_2^2) + (4*k^2 * ApC) + (8*k*N_2*B)
+	
+	
+	XX = η_tilde^2 + (η^2 * δpχ / αpϵ) + (4*η*η_tilde * B/αpϵ)
+	ZZ = (η^4 * (N_2-2)^2)/αpϵ
+	YY = ZZ
 
-	fusion_errx = 1 + ((II_in * C_A)/(trace_2 * II))
+	stab_out = [XX, YY, ZZ]
+	
+	XX_i =  (η_tilde^2 + η^2) + (4*k*η*η_tilde/N_2)
+	ZZ_i = η^2 * ( 1 - k^2)/N_2
+	stab_in = [XX_i, ZZ_i, ZZ_i]
+	# X, Y, Z
+	# II = 1 + (d/c)^2 + (2*d*B/(trace_2*c))
+	# stab_out =  [ (1 + (d/c)^2 + (2*d*B/(trace_2*c))) ,
+	#             -(e^2 * C_A/ trace_2),
+	#             -(e^2 * C_A/ trace_2)
+	# ]
+	# stab_out /= II
+
+	# fusion_errx = 1 + ((II_in * C_A)/(trace_2 * II))
 	
     px, py, pz, po = stab_to_pauli_pl(stab_in)
     p_oz = po + pz
@@ -127,20 +133,31 @@ function pauli_err_fusion4(γ, η, D)
     pz_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) - ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
     px_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) + ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
     py_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) - ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
-    return (0.5 .* [px_, py_, pz_, po_]), fusion_errx/2
+    return (0.5 .* [px_, py_, pz_, po_]), stab_in, stab_out
 	# , [px, py, pz, po], [Px, Py, Pz, Po]
 end
 
 # ╔═╡ 2d6838f8-09ad-43d0-b463-3645aa1b5956
-list1, fx = pauli_err_fusion4(γ, η, ζ)
+pauli_err_fusion4(γ, η, ζ)[1]
 
-# ╔═╡ 790e201a-8dea-4d30-9d1e-cc9fc676015f
-(list1[1] - fx) < 1e-10
+# ╔═╡ c7e9d88d-411e-4632-bdac-262cfd43213b
+# begin
+# 	# plot(stab_to_pauli_pl(pauli_err_fusion4(γ, η, ζ)[1]), label = "in")
+# 	plot(pauli_err_fusion4(γ, η, ζ)[1][1:3], label = "in", marker=(:circle,6))
+# 	# plot!(stab_to_pauli_pl(pauli_err_fusion4(γ, η, ζ)[3]))
+	
+# 	plot!(
+# 		# xticks=(1:4, ["Px","Py","Pz"]), 
+# 		legend=:outertopright, 
+# 		marker=(:star,6), 
+# 		ylims=(0,0.1),
+# 	ylabel="Probability", title="Comparing Pauli Error Rates for γ=$γ, η=$η, ζ=$ζ")
+# end
 
 # ╔═╡ 874afd3b-8dfc-4056-ae03-53f4675bb811
 begin
-	plot(pauli_err_fusion4(γ, η, ζ)[1])
-	plot!(pauli_err_fusion4(γ, η, ζ)[2])
+	plot(pauli_err_fusion4(γ, η, ζ)[2], label = "in")
+	plot!(pauli_err_fusion4(γ, η, ζ)[3])
 	
 	plot!(xticks=(1:4, ["Px","Py","Pz","Po"]), legend=:outertopright, marker=(:star,6), ylims=(0,1.1),
 	ylabel="Probability", title="Comparing Pauli Error Rates for γ=$γ, η=$η, ζ=$ζ")
@@ -1270,12 +1287,12 @@ version = "1.9.2+0"
 # ╠═87ed7143-5f93-42b0-a4f6-82400fc66b2f
 # ╠═615f9d76-dff6-48f0-88c0-7ad251a78275
 # ╠═edb4d0e9-cb85-457b-8302-8c2d6a64ab9d
-# ╠═a3aef730-2c34-466c-af05-1fab01a47ade
+# ╟─a3aef730-2c34-466c-af05-1fab01a47ade
 # ╟─825feec6-54be-4222-8d06-df1338cbcf75
 # ╟─d86addaa-b159-4580-8f37-4630990246ce
-# ╟─8e8e4261-ac9c-4171-a4c5-8a5e2c4a524a
+# ╠═8e8e4261-ac9c-4171-a4c5-8a5e2c4a524a
 # ╠═2d6838f8-09ad-43d0-b463-3645aa1b5956
-# ╠═790e201a-8dea-4d30-9d1e-cc9fc676015f
+# ╟─c7e9d88d-411e-4632-bdac-262cfd43213b
 # ╠═874afd3b-8dfc-4056-ae03-53f4675bb811
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

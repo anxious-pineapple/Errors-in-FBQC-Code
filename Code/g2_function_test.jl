@@ -1,3 +1,9 @@
+###
+# Code tests out creation of gvi functions based on paper https://arxiv.org/abs/1902.09833
+# Returns eigenvalues and various gvi functions
+###
+
+
 using Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations
 
 gamma = 1 

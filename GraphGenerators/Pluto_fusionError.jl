@@ -20,15 +20,6 @@ using PlutoUI, Plots
 # ╔═╡ 8b1b00a2-b0bf-49d9-962e-feae49e43f43
 plotly()
 
-# ╔═╡ 87ed7143-5f93-42b0-a4f6-82400fc66b2f
-@bind γ Slider(0:0.01:0.5; default=0.1, show_value=true)
-
-# ╔═╡ 615f9d76-dff6-48f0-88c0-7ad251a78275
-@bind ζ Slider(1:-0.01:0; default=0.9, show_value=true) #D
-
-# ╔═╡ edb4d0e9-cb85-457b-8302-8c2d6a64ab9d
-@bind η Slider(0:0.01:1; default=0.9, show_value=true)
-
 # ╔═╡ a3aef730-2c34-466c-af05-1fab01a47ade
 function stab_to_pauli_pl(stab_list)
 	temp_probs = (1 - stab_list[1] - stab_list[2] - stab_list[3]) .* [1.0,1.0,1.0]
@@ -63,22 +54,122 @@ function pauli_err_fusion(γ, η, ζ)
     ]
 
 
-    px, py, pz, po = stab_to_pauli_pl(stab_in)
-    p_oz = po + pz
-    m_oz = po - pz
-    p_xy = px + py
-    m_xy = px - py
+    # px, py, pz, po = stab_to_pauli_pl(stab_in)
+    # p_oz = po + pz
+    # m_oz = po - pz
+    # p_xy = px + py
+    # m_xy = px - py
+    # Px, Py, Pz, Po = stab_to_pauli_pl(stab_out)
+    # P_oz = Po + Pz
+    # M_oz = Po - Pz
+    # P_xy = Px + Py
+    # M_xy = Px - Py
+
+    # po_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) + ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
+    # pz_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) - ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
+    # px_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) + ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
+    # py_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) - ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
+    # return (0.5 .* [px_, py_, pz_, po_])
+	px, py, pz, po = stab_to_pauli_pl(stab_in)
+    a_var = (po + pz)^2 + (px+py)^2
+    b_var = 2*(po + pz)*(px + py)
+    c_var = (po - pz)^2 + (px-py)^2
+    d_var = 2*(po - pz)*(px - py)
     Px, Py, Pz, Po = stab_to_pauli_pl(stab_out)
     P_oz = Po + Pz
     M_oz = Po - Pz
     P_xy = Px + Py
     M_xy = Px - Py
 
-    po_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) + ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
-    pz_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) - ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
-    px_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) + ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
-    py_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) - ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
-    return (0.5 .* [px_, py_, pz_, po_])
+    p_fuse_oz = (a_var*P_oz - b_var*P_xy)/(a_var - b_var)
+    m_fuse_oz = (c_var*M_oz - d_var*M_xy)/(c_var^2 - d_var^2)
+
+    p_fuse_xy = (a_var*P_xy - b_var*P_oz)/(a_var - b_var)
+    m_fuse_xy = (c_var*M_xy - d_var*M_oz)/(c_var^2 - d_var^2)
+
+    po_ = (p_fuse_oz + m_fuse_oz)/2
+    pz_ = (p_fuse_oz - m_fuse_oz)/2
+    px_ = (p_fuse_xy + m_fuse_xy)/2
+    py_ = (p_fuse_xy - m_fuse_xy)/2
+    return ([px_, py_, pz_, po_], stab_in, stab_out) 
+end
+
+# ╔═╡ 7268f669-d190-43b9-a9fd-eb57762ebd11
+function pauli_err_fusion4_2(γ, η, D, V)
+	γ_2 = γ^2
+	
+	η_t = (1-η) * γ_2
+	
+	k = sqrt(4*D*(1-D))
+	N_2 = 1 + k^2
+	D_t_2 = 1 - k^2
+	
+	trace = (η_t + (0.5*η))^2
+	trace_term2 = η^2 * (1 + (V*( (D_t_2/N_2)^2 - 1 )))/8
+	trace = trace - trace_term2
+
+	II = (η + η_t)^2
+	
+	XX = 4*k*η* ((k*η) + (η_t*(N_2^0.5))) * ((η_t + (0.5*η))^2 + (η^2 * (V-1)/8))/N_2^2
+	XX += (V* η^4 * D_t_2^2) / (8 * N_2^2)
+	XX /= trace 
+	XX += η_t^2
+	ZZ = (η^4 * D_t_2^2)/(8 * N_2^2 * trace)
+	YY = ZZ * V
+	stab_out = [XX, YY, ZZ]/II
+	
+	XX_i =  (η_t^2) + (η^2) + (4*k*η*η_t/N_2)
+	ZZ_i = η^2 * D_t_2/N_2
+	stab_in = [XX_i, ZZ_i, ZZ_i]/II
+	
+	px, py, pz, po = stab_to_pauli_pl(stab_in)
+	# po = 1 - px - py - pz
+    p_oz = po + pz
+	m_oz = po - pz
+	p_xy = px + py
+	m_xy = px - py
+
+	
+    Px, Py, Pz, Po = stab_to_pauli_pl(stab_out)
+	
+    P_oz = Po + Pz
+    M_oz = Po - Pz
+    P_xy = Px + Py
+    M_xy = Px - Py
+
+    p_fuse_oz = (P_oz - (2*p_oz*p_xy))/(p_oz - p_xy)^2
+	m_fuse_oz_num = (M_oz*(m_oz+m_xy)^2) - (2*m_oz*m_xy*(M_oz+M_xy))
+	m_fuse_oz_denom = (m_oz^2 - m_xy^2)^2
+	m_fuse_oz = m_fuse_oz_num/m_fuse_oz_denom
+	
+	p_fuse_xy = (P_xy - (2*p_oz*p_xy))/((p_oz - p_xy)^2)
+	m_fuse_xy_num = (M_xy*(m_oz+m_xy)^2) - (2*m_oz*m_xy*(M_oz+M_xy))
+	m_fuse_xy_denom = (m_oz^2 - (m_xy^2))^2
+	m_fuse_xy = m_fuse_xy_num/m_fuse_xy_denom
+	
+	po_ = (p_fuse_oz + m_fuse_oz)/2
+	pz_ = (p_fuse_oz - m_fuse_oz)/2
+	px_ = (p_fuse_xy + m_fuse_xy)/2
+	py_ = (p_fuse_xy - m_fuse_xy)/2
+
+	plus_oz = (p_oz^2) + (p_xy^2)
+	minus_oz = (m_oz^2) + (m_xy^2)
+	plus_xy = 2*p_oz*p_xy
+	minus_xy = 2*m_xy*m_oz
+
+	trial_o = (plus_oz+minus_oz)/2
+	trial_z = (plus_oz-minus_oz)/2
+	trial_x = (plus_xy+minus_xy)/2
+	trial_y = (plus_xy-minus_xy)/2
+
+	matrix_m = [trial_o trial_z trial_y trial_x;
+            trial_z trial_o trial_x trial_y;
+            trial_y trial_x trial_o trial_z;
+            trial_x trial_y trial_z trial_o]
+
+	out = inv(matrix_m) * [Px Py Pz Po]'
+	
+    return ([px_, py_, pz_, po_], stab_in, stab_out, [trial_x, trial_y, trial_z, trial_o], out, matrix_m) 
 end
 
 # ╔═╡ 8e8e4261-ac9c-4171-a4c5-8a5e2c4a524a
@@ -118,27 +209,114 @@ function pauli_err_fusion4(γ, η, D)
 
 	# fusion_errx = 1 + ((II_in * C_A)/(trace_2 * II))
 	
-    px, py, pz, po = stab_to_pauli_pl(stab_in)
-    p_oz = po + pz
-    m_oz = po - pz
-    p_xy = px + py
-    m_xy = px - py
+    # px, py, pz, po = stab_to_pauli_pl(stab_in)
+    # p_oz = po + pz
+    # m_oz = po - pz
+    # p_xy = px + py
+    # m_xy = px - py
+    # Px, Py, Pz, Po = stab_to_pauli_pl(stab_out)
+    # P_oz = Po + Pz
+    # M_oz = Po - Pz
+    # P_xy = Px + Py
+    # M_xy = Px - Py
+
+    # po_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) + ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
+    # pz_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) - ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
+    # px_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) + ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
+    # py_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) - ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
+    # return (0.5 .* [px_, py_, pz_, po_]), stab_in, stab_out
+
+	
+	# , [px, py, pz, po], [Px, Py, Pz, Po]
+	px, py, pz, po = stab_to_pauli_pl(stab_in)
+    a_var = (po + pz)^2 + (px+py)^2
+    b_var = 2*(po + pz)*(px + py)
+    c_var = (po - pz)^2 + (px-py)^2
+    d_var = 2*(po - pz)*(px - py)
     Px, Py, Pz, Po = stab_to_pauli_pl(stab_out)
     P_oz = Po + Pz
     M_oz = Po - Pz
     P_xy = Px + Py
     M_xy = Px - Py
 
-    po_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) + ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
-    pz_ = ((p_oz*P_oz - p_xy*P_xy)/(p_oz^2 - p_xy^2)) - ((m_oz*M_oz - m_xy*M_xy)/(m_oz^2 - m_xy^2))
-    px_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) + ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
-    py_ = ((p_oz*P_xy - p_xy*P_oz)/(p_oz^2 - p_xy^2)) - ((m_oz*M_xy - m_xy*M_oz)/(m_oz^2 - m_xy^2))
-    return (0.5 .* [px_, py_, pz_, po_]), stab_in, stab_out
-	# , [px, py, pz, po], [Px, Py, Pz, Po]
+    p_fuse_oz = (a_var*P_oz - b_var*P_xy)/(a_var - b_var)
+    m_fuse_oz = (c_var*M_oz - d_var*M_xy)/(c_var^2 - d_var^2)
+
+    p_fuse_xy = (a_var*P_xy - b_var*P_oz)/(a_var - b_var)
+    m_fuse_xy = (c_var*M_xy - d_var*M_oz)/(c_var^2 - d_var^2)
+
+    po_ = (p_fuse_oz + m_fuse_oz)/2
+    pz_ = (p_fuse_oz - m_fuse_oz)/2
+    px_ = (p_fuse_xy + m_fuse_xy)/2
+    py_ = (p_fuse_xy - m_fuse_xy)/2
+    return ([px_, py_, pz_, po_], stab_in, stab_out) 
 end
 
-# ╔═╡ 2d6838f8-09ad-43d0-b463-3645aa1b5956
-pauli_err_fusion4(γ, η, ζ)[1]
+# ╔═╡ 87ed7143-5f93-42b0-a4f6-82400fc66b2f
+@bind γ Slider(0:0.01:0.5; default=0.1, show_value=true)
+
+# ╔═╡ 39a680fd-5dda-4893-9e89-fbcb2bb2bfaa
+@bind η Slider(0:0.01:1; default=0.9, show_value=true)
+
+# ╔═╡ 615f9d76-dff6-48f0-88c0-7ad251a78275
+@bind ζ Slider(1:-0.001:0.8; default=0.9, show_value=true) #D
+
+# ╔═╡ 48cda8b6-b347-4888-b069-9bd005f3383a
+@bind V Slider(1:-0.01:0; default=0.9, show_value=true)
+
+# ╔═╡ 8415885b-1b59-4ff1-a5f9-400fdee84e43
+(pauli_err_fusion4_2(γ, η, ζ, V)[1])
+
+# ╔═╡ 874afd3b-8dfc-4056-ae03-53f4675bb811
+begin
+	plot(pauli_err_fusion4_2(γ, η, ζ, V)[1][1:3], label = "in")
+	# plot!(pauli_err_fusion4(γ, η, ζ)[3])
+	
+	plot!(xticks=(1:4, ["Px","Py","Pz","Po"]), legend=:outertopright, marker=(:star,6),
+		# ylims=(0,1.1),
+	ylabel="Probability", title="Comparing Pauli Error Rates for γ=$γ, η=$η, ζ=$ζ")
+end
+
+# ╔═╡ 36766ec2-b452-4eff-88e4-db3609033a09
+(pauli_err_fusion(γ, η, ζ)[2])
+
+# ╔═╡ f64f7bef-b8ce-454e-bb30-f87009d07556
+(pauli_err_fusion(γ, η, ζ)[3])
+
+# ╔═╡ 4544c5b7-0e7a-4c4b-9496-7a46336b0d98
+(pauli_err_fusion(γ, η, ζ)[1])
+
+# ╔═╡ 4483c699-67d8-42e8-98eb-3f9bddbeef49
+stab_to_pauli_pl(pauli_err_fusion4_2(γ, η, ζ, V)[2])
+
+# ╔═╡ cc6145c3-f47c-49d9-b32a-9f615be45da5
+(pauli_err_fusion4_2(γ, η, ζ, V)[4])
+
+# ╔═╡ 7f69817d-45e2-4037-8662-bcf392cfe7ef
+stab_to_pauli_pl(pauli_err_fusion4_2(γ, η, ζ, V)[3])
+
+# ╔═╡ 7a7facdc-bbbe-47ed-8f15-7acf389267df
+sum((pauli_err_fusion4_2(γ, η, ζ, V)[4]).^2)
+
+# ╔═╡ 9be9f72d-2216-4712-a062-b527f08c56eb
+sum(stab_to_pauli_pl(pauli_err_fusion4_2(γ, η, ζ, V)[3]).^2)
+
+# ╔═╡ e7a6df9d-33c9-467e-84cd-944d69d2802d
+#after perf fusion error inc?
+(pauli_err_fusion4_2(γ, η, ζ, V)[4])[1:3] .>= stab_to_pauli_pl(pauli_err_fusion4_2(γ, η, ζ, V)[2])[1:3]
+
+# ╔═╡ d82b6388-e4ea-44e5-9a03-269af08893eb
+#added error to final, error inc?
+stab_to_pauli_pl(pauli_err_fusion4_2(γ, η, ζ, V)[3])[1:3] .>= (pauli_err_fusion4_2(γ, η, ζ, V)[4])[1:3]
+
+# ╔═╡ ab396453-ec11-410c-82f7-ae126f15616a
+(pauli_err_fusion4_2(γ, η, ζ, V)[5])'
+
+# ╔═╡ 865d5db3-1811-4a62-b9c8-ce27e51fdfd8
+(pauli_err_fusion4_2(γ, η, ζ, V)[1])
+
+# ╔═╡ 9974eae9-5c7b-4485-96a5-fbc9bab13daa
+inv(pauli_err_fusion4_2(γ, η, ζ, V)[6] )
 
 # ╔═╡ c7e9d88d-411e-4632-bdac-262cfd43213b
 # begin
@@ -153,15 +331,6 @@ pauli_err_fusion4(γ, η, ζ)[1]
 # 		ylims=(0,0.1),
 # 	ylabel="Probability", title="Comparing Pauli Error Rates for γ=$γ, η=$η, ζ=$ζ")
 # end
-
-# ╔═╡ 874afd3b-8dfc-4056-ae03-53f4675bb811
-begin
-	plot(pauli_err_fusion4(γ, η, ζ)[2], label = "in")
-	plot!(pauli_err_fusion4(γ, η, ζ)[3])
-	
-	plot!(xticks=(1:4, ["Px","Py","Pz","Po"]), legend=:outertopright, marker=(:star,6), ylims=(0,1.1),
-	ylabel="Probability", title="Comparing Pauli Error Rates for γ=$γ, η=$η, ζ=$ζ")
-end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1284,15 +1453,30 @@ version = "1.9.2+0"
 # ╔═╡ Cell order:
 # ╠═f6e963c3-3ca0-4c23-b4e6-ffad0621669c
 # ╠═8b1b00a2-b0bf-49d9-962e-feae49e43f43
-# ╠═87ed7143-5f93-42b0-a4f6-82400fc66b2f
-# ╠═615f9d76-dff6-48f0-88c0-7ad251a78275
-# ╠═edb4d0e9-cb85-457b-8302-8c2d6a64ab9d
 # ╟─a3aef730-2c34-466c-af05-1fab01a47ade
 # ╟─825feec6-54be-4222-8d06-df1338cbcf75
-# ╟─d86addaa-b159-4580-8f37-4630990246ce
-# ╠═8e8e4261-ac9c-4171-a4c5-8a5e2c4a524a
-# ╠═2d6838f8-09ad-43d0-b463-3645aa1b5956
-# ╟─c7e9d88d-411e-4632-bdac-262cfd43213b
+# ╠═d86addaa-b159-4580-8f37-4630990246ce
+# ╠═7268f669-d190-43b9-a9fd-eb57762ebd11
+# ╟─8e8e4261-ac9c-4171-a4c5-8a5e2c4a524a
+# ╠═87ed7143-5f93-42b0-a4f6-82400fc66b2f
+# ╠═39a680fd-5dda-4893-9e89-fbcb2bb2bfaa
+# ╠═615f9d76-dff6-48f0-88c0-7ad251a78275
+# ╠═48cda8b6-b347-4888-b069-9bd005f3383a
+# ╠═8415885b-1b59-4ff1-a5f9-400fdee84e43
 # ╠═874afd3b-8dfc-4056-ae03-53f4675bb811
+# ╠═36766ec2-b452-4eff-88e4-db3609033a09
+# ╠═f64f7bef-b8ce-454e-bb30-f87009d07556
+# ╠═4544c5b7-0e7a-4c4b-9496-7a46336b0d98
+# ╠═4483c699-67d8-42e8-98eb-3f9bddbeef49
+# ╠═cc6145c3-f47c-49d9-b32a-9f615be45da5
+# ╠═7f69817d-45e2-4037-8662-bcf392cfe7ef
+# ╠═7a7facdc-bbbe-47ed-8f15-7acf389267df
+# ╠═9be9f72d-2216-4712-a062-b527f08c56eb
+# ╠═e7a6df9d-33c9-467e-84cd-944d69d2802d
+# ╠═d82b6388-e4ea-44e5-9a03-269af08893eb
+# ╠═ab396453-ec11-410c-82f7-ae126f15616a
+# ╠═865d5db3-1811-4a62-b9c8-ce27e51fdfd8
+# ╠═9974eae9-5c7b-4485-96a5-fbc9bab13daa
+# ╟─c7e9d88d-411e-4632-bdac-262cfd43213b
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

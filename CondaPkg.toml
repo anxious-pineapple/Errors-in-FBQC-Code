@@ -1,0 +1,4 @@
+[pip.deps]
+# Needed by Code/StimFBQC.ipynb (plain Python notebook, not a Julia dependency)
+stim = ""
+ipykernel = ""

@@ -1473,9 +1473,9 @@ version = "1.4.0"
 
 [[deps.Latexify]]
 deps = ["Format", "Ghostscript_jll", "InteractiveUtils", "LaTeXStrings", "MacroTools", "Markdown", "OrderedCollections", "Requires"]
-git-tree-sha1 = "44f93c47f9cd6c7e431f2f2091fcba8f01cd7e8f"
+git-tree-sha1 = "24390f715ff0795a1c4b912d788f18c52c6abd19"
 uuid = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
-version = "0.16.10"
+version = "0.16.11"
 
     [deps.Latexify.extensions]
     DataFramesExt = "DataFrames"
@@ -3725,7 +3725,7 @@ uuid = "8e850ede-7688-5339-a07c-302acd2aaf8d"
 version = "1.52.0+1"
 
 [[deps.oneTBB_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl"]
+deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl"]
 git-tree-sha1 = "d5a767a3bb77135a99e433afe0eb14cd7f6914c3"
 uuid = "1317d2d5-d96f-522e-a858-c73665f53c3e"
 version = "2022.0.0+0"

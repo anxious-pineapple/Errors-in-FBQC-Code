@@ -7,7 +7,7 @@
 using Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations
 
 gamma = 1 
-deph = 0.01
+deph = 0.1
 t_fin = 10
 dt = 0.01
 no_cavs = 10
@@ -37,6 +37,11 @@ corel_m = -diagm((diag(corel_m))) + corel_m + conj(corel_m)'
 corel_m = real(corel_m)
 # println(any(isnan.(corel_m)))
 eigenvals, eigens = eigen(corel_m; sortby=-)
+
+eigenvals_trunc = eigenvals[1:100]/sum(eigenvals[1:100])
+S = sum([-i*log(i) for i in eigenvals_trunc])
+bond_dim  = exp(S)
+
 
 v_0 = [cubic_spline_interpolation(0:dt:t_fin, eigens[:,i]; extrapolation_bc=0) for i in 1:no_cavs]
 gv = Dict()

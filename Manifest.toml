@@ -2594,10 +2594,10 @@ uuid = "5717a53b-5d69-4fa3-b976-0bf2f97ca1e5"
 version = "0.4.1"
 
 [[deps.QuantumOptics]]
-deps = ["Arpack", "DiffEqBase", "DiffEqCallbacks", "DiffEqNoiseProcess", "FFTW", "ForwardDiff", "IterativeSolvers", "KrylovKit", "LinearAlgebra", "LinearMaps", "OrdinaryDiffEqCore", "OrdinaryDiffEqLowOrderRK", "QuantumOpticsBase", "Random", "RecursiveArrayTools", "Reexport", "SparseArrays", "StochasticDiffEq", "WignerSymbols"]
-git-tree-sha1 = "75f561595505a17bbec7e304a28ca37191223d41"
+deps = ["Arpack", "DiffEqCallbacks", "DiffEqNoiseProcess", "FFTW", "IterativeSolvers", "KrylovKit", "LinearAlgebra", "LinearMaps", "OrdinaryDiffEqCore", "OrdinaryDiffEqLowOrderRK", "QuantumOpticsBase", "Random", "RecursiveArrayTools", "Reexport", "SciMLBase", "SparseArrays", "StochasticDiffEq", "WignerSymbols"]
+git-tree-sha1 = "1a9ad9be89bccc00b929e56e1ff7b5af1dd6ddcb"
 uuid = "6e0679c1-51ea-5a7c-ac74-d61b76210b0c"
-version = "1.2.3"
+version = "1.2.6"
 
 [[deps.QuantumOpticsBase]]
 deps = ["Adapt", "FFTW", "FastExpm", "FastGaussQuadrature", "FillArrays", "LRUCache", "LinearAlgebra", "QuantumInterface", "Random", "RecursiveArrayTools", "SparseArrays", "Strided", "UnsafeArrays"]

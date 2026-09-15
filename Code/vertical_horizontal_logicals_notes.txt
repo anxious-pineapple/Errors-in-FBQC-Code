@@ -1,0 +1,264 @@
+Hexagon FBQC code: Timelike / Vertical / Horizontal logicals
+==============================================================
+Notes on what is solved in closed form (Timelike X/Z, Vertical Z, Horizontal Z)
+and what is only known empirically (Vertical X, Horizontal X), companion to
+Code/Hexagon_fbqc_walkthrough.ipynb section 4.
+
+Six logicals total: Timelike X, Timelike Z, Vertical Z, Horizontal Z,
+Vertical X, Horizontal X. All six now have a hand-derived closed form (see
+sections 1-3). Vertical X / Horizontal X took much longer: every early
+closed-form attempt failed, brute-force nullspace search kept returning a
+"stationary staircase + 4-step seam exception" representative that looked
+physically necessary, and it took an explicit period-6-invariance linear
+solve (see section 3) to show that representative was never minimal --
+the real closed form is a simple stationary construction, no marching, no
+exceptions, verified independent and correctly normalised at both Lx=6 and
+Lx=12.
+
+
+0. Notation recap
+------------------
+STEP_SCHEDULE = [(red,XX), (green,ZZ), (blue,XX), (red,ZZ), (green,XX), (blue,ZZ)]
+indexed by t % 6 ("step 1" = t%6==0 = red-XX, ... "step 6" = t%6==5 = blue-ZZ).
+
+Every fusion primitive (CNOT;H;M) yields BOTH an XX and a ZZ record regardless
+of the step's own schedule label -- the "kind" in STEP_SCHEDULE is bookkeeping,
+not a physical constraint. A record can be pulled as its "native" kind (the
+step's own schedule label) or "anti-native" kind (the other one).
+
+Established rule for hexagon checks (section 3 of the notebook): a Z-type
+check pulls the NATIVE kind at every term; an X-type check pulls the
+ANTI-NATIVE kind at every term. This rule holds uniformly across all six
+detector types, and (checked this session) also for Timelike X/Z and
+Vertical/Horizontal Z's closed forms below.
+
+Column/row "native colour": every point's internal (same-column) edge is
+red at x%3==0, green at x%3==1, blue at x%3==2 (and the analogous rule for y,
+NATIVE_OF_Y = {0:green, 1:blue, 2:red}). Crossing edges (spanning column k to
+k+1) follow a shifted version of this table: crossing(k,k+1) is blue at
+k%3==0, red at k%3==1, green at k%3==2 (for y: crossing(k,k+1) is red at
+k%3==0, green at k%3==1, blue at k%3==2 -- note this is NOT the same shift
+as the x-direction table; x and y are not simply mirror images of each
+other here, verified directly rather than assumed). These tables are NOT
+the same rule applied to different offsets -- internal and crossing are
+offset by one from each other, and mixing them up (or assuming x's table
+carries over to y unchanged) is an easy source of "this construction
+doesn't close" bugs (came up directly while testing hand proposals this
+session, for both directions).
+
+
+1. Timelike X / Timelike Z -- closed form (SOLVED)
+----------------------------------------------------
+A Timelike logical lives at a FIXED cycle (no spatial sweep) and uses EVERY
+edge of ALL THREE colours, at three consecutive timesteps spanning either the
+first half of a cycle (steps 1,2,3) or the second half (steps 4,5,6).
+
+    def timelike_row(net, st, records, nmeas, c0, steps, mode):
+        v = zeros(nmeas)
+        for step in steps:
+            colour, native = STEP_SCHEDULE[step - 1]
+            t = (6*c0 + (step - 1)) % st.total_t
+            kind = native if mode == "native" else opposite(native)
+            for edge in all edges of `colour`:
+                v[record(t, colour, native, edge) at `kind`] ^= 1
+        return v
+
+    Timelike X = timelike_row(c0=0, steps=[1,2,3], mode="anti")   # red,green,blue at t=0,1,2
+    Timelike Z = timelike_row(c0=1, steps=[4,5,6], mode="native") # red,green,blue at t=6,7,8
+
+Weight = full lattice edge count (all red + all green + all blue edges) at
+3 consecutive timesteps. Independent of Lx, Ly beyond the edge count scaling;
+no marching, no exceptions -- every occurrence across cycles is identical
+once you fix which "half-cycle" (steps 1-3 vs 4-6) it uses.
+
+
+2. Vertical Z / Horizontal Z -- the "marching" closed form (SOLVED)
+----------------------------------------------------------------------
+A Vertical/Horizontal Z logical sweeps a SINGLE column (or row) position
+across the WHOLE lattice, one position every 2 timesteps, using the FULL
+period (all n_cycles). At each timestep, every point currently in that
+column contributes its edge of the round's colour: if that colour is the
+column's own "native" colour (own-column edge, dx=0), the edge is shared by
+two points in the same enumeration and must be de-duplicated; if not (a
+crossing edge reaching into a neighbouring column), no de-dup is needed.
+
+    def marching_row(net, st, records, nmeas, axis, start, t0, kind_own, kind_ext, direction=-1):
+        v = zeros(nmeas)
+        length = Lx if axis==0 else Ly
+        for k in range(st.total_t):
+            t = (t0 + k) % st.total_t
+            colour, native = STEP_SCHEDULE[t % 6]
+            pos = (start + direction*(k // 2)) % length
+            is_own = (colour == native_colour_of(pos))
+            for p in points with p[axis] == pos:
+                edge = p's edge of `colour`
+                if is_own: de-duplicate (own-column edge, both endpoints in this loop)
+                kind = kind_own if is_own else kind_ext
+                v[record(t, colour, native, edge) at kind] ^= 1
+        return v
+
+    Vertical Z   = marching_row(axis=0, start=3, t0=0, kind_own="XX", kind_ext="ZZ")
+    Horizontal Z = marching_row(axis=1, start=2, t0=0, kind_own="XX", kind_ext="ZZ")
+
+Requires FULL closure: n_cycles = Lx/3 (or Ly/3) exactly, so the marching
+position returns to its start after sweeping every column/row once. Partial
+sweeps (n_cycles less than this) do not close and are not deterministic.
+Weight scales with lattice size (own-column + crossing edges summed over
+every column swept); no exceptions anywhere in the sweep -- every column's
+visit looks the same modulo which column it is.
+
+
+3. Vertical X / Horizontal X -- closed form (SOLVED)
+------------------------------------------------------
+The true closed form is stationary, not a marching sweep: fixed at TWO
+adjacent columns (or rows) for ALL points along the other axis, repeating
+IDENTICALLY every cycle, with the schedule's own colour order (red, green,
+blue) mapped straight onto three fixed spatial roles. No exceptions
+anywhere. Uses the uniform anti-native kind, same rule as every other
+X-type construction.
+
+    Vertical X (x0, x1=x0+1, e.g. x0=0,x1=1 -- x0 must be red's own
+    internal residue, i.e. x0%3==0):
+      step 1 (red):   internal edges at x0,      ZZ   (anti-native)
+      step 2 (green): internal edges at x1,      XX   (anti-native)
+      step 3 (blue):  crossing edges x0/x1,      ZZ   (anti-native)
+      step 4 (red):   internal edges at x0,      XX   (anti-native)
+      step 5 (green): internal edges at x1,      ZZ   (anti-native)
+      step 6 (blue):  crossing edges x0/x1,      XX   (anti-native)
+    repeated identically every cycle.
+
+    Horizontal X: same pattern with x -> y, using the y-direction
+    internal/crossing tables (section 0) instead of x's -- y0 must be red's
+    own internal residue (y0%3==2, e.g. y0=2,y1=3), NOT the same residue as
+    x0. The x and y colour tables are offset differently from each other,
+    so the two constructions are structurally the mirror of each other but
+    anchored at different phase offsets.
+
+    def build_stationary_vx(net, st, records, nmeas, x0, x1):
+        pattern = [(colour_of_step, {x0} or {x1} or {x0,x1}, kind), ...]  # as above
+        for c in range(n_cycles):
+            for step, (xs, kind) in enumerate(pattern):
+                t = 6*c + step
+                colour, native = STEP_SCHEDULE[step]
+                for edge in edges of `colour` with endpoint x-coords == xs:
+                    v[record(t, colour, native, edge) at kind] ^= 1
+        return v
+
+Verified at Lx=12: weight 128 for both Vertical X and Horizontal X,
+`has_flow` True directly (no sweeping/tuning needed once the internal/
+crossing colour tables were correctly matched to each axis), independent of
+checks + Timelike X/Z + Vertical Z + Horizontal Z + each other, and
+(v_stationary XOR v_loop) is a product of checks against the winding-loop
+representative found via the linear solve below -- confirming it is the
+SAME logical class, just the minimal-weight member of it (128 vs the loop's
+144 for Vertical X; exactly equal at 128 for Horizontal X).
+
+How this was found: brute-force nullspace search kept returning a
+different, heavier representative (the "stationary staircase + 4-step seam
+exception" described further down), which looked like a physical necessity
+tied to the temporal wraparound. It wasn't -- logical operators are only
+defined up to addition of checks, and the brute-force search just handed
+back one arbitrary member of a whole coset. Two things established this,
+in order:
+
+  (a) Seam-shift test: let v be the brute-force representative, and v' the
+      same edges/kinds translated t -> (t+6) mod T. v' is independently
+      deterministic (`has_flow` True), and v XOR v' is a product of checks
+      -- so v and v' are the same logical class, meaning the exception is
+      movable (shifts by 6 steps), not physically pinned to the seam.
+  (b) Explicit period-6 solve: letting P be the permutation implementing
+      t -> (t+6) mod T on records and C the check matrix, solve
+      (P + I) C^T y = (P + I) v over GF(2) for y. Consistent every time
+      tried (Lx=6 and Lx=12, both logicals) -- w = v + C^T y is then
+      EXACTLY period-6 invariant (w == shift(w, +6) term-for-term), still
+      deterministic, and reading off its terms shows a single
+      non-contractible loop of edges (winding once around y for Vertical X,
+      once around x for Horizontal X), not a staircase. That loop is a
+      valid closed form, but not the minimal one.
+  The stationary construction above was then hand-proposed directly (not
+  found by the linear solve) and verified to be an even lighter member of
+  the same coset than the loop -- the actual minimal, clean closed form.
+
+Weight/support data for the (now superseded, but still useful for context)
+brute-force "stationary staircase + exception" representative, and the
+exception step-positions (always 1,3,4,6, never 2,5) -- these describe the
+representative the naive search finds, NOT the true minimal logical above:
+  Vertical X:   Lx=9 weight 76 x in {0,1,2,8} / Lx=12 weight 132 x in
+                {0,1,2,11} / Lx=15 weight 204 x in {0,1,2,14} / Lx=18
+                weight 292 x in {0,1,2,17}
+  Horizontal X: Lx=12 weight 128 y in {0,1,11} / Lx=18 weight 288 y in
+                {0,1,17}
+
+Failed hand-derivation attempts that predate the solved form above (for the
+record -- these were tried before the axis-specific colour tables were
+pinned down correctly, or before the coset/minimality insight; do not
+re-try without a new idea, several are proven impossible for the SPECIFIC
+edge-sets tried, not for the construction in general):
+  1. x=2, blue-paired, steps 1,5 + 3 -- proven impossible (0-dim restricted
+     nullspace).
+  2. x=0, red-paired, odd/even-y parity split, steps 1,3,5 only -- proven
+     impossible at any scale.
+  3. Generalisation of (2) to all x = 0 mod 3 -- also proven impossible.
+  4. Multi-tile "diagonal marching" with explicit crossing edges -- fails
+     has_flow, not proven impossible but never found working.
+  5. x=1/x=0 crossing + x=1 green-own-twice construction -- fails has_flow.
+  6. (This session) marching-style construction using literal "connected at
+     x=k / x=k,k+1" description with uniform anti-native kind: the regular
+     part is geometrically sound and matches the native/crossing colour
+     tables above, but every proposed "exception" (a hand-picked
+     substitution for the last cycle's steps 4,5,6) hit a hard mod-3
+     contradiction -- the schedule fixes red/green/blue to steps 4/5/6
+     respectively, and their internal-vs-crossing colour residues cannot be
+     satisfied simultaneously by a single position `i`. Two of the three
+     exception terms always come out empty regardless of where the march
+     starts. Not yet resolved.
+
+Theoretical context (from Davydova, Tantivasadakarn, Balasubramanian,
+"Floquet codes without parent subsystem codes", arXiv:2210.02468 -- this is
+very likely the parent construction of this whole notebook: identical
+{rXX,gZZ,bXX,rZZ,gXX,bZZ} schedule on a 3-colourable trivalent lattice):
+  - The paper's magnetic logical string (m1/m2-type, Z-type, zigzag through
+    two colours) structurally matches our stationary construction above
+    much more directly now that it is pinned down: fixed at two adjacent
+    columns/rows, no marching, three colours cycling through in the
+    schedule's own order. The electric string (e-type, X-type, straight
+    line through one colour) is the closer structural match for
+    Vertical/Horizontal Z's marching shape instead.
+  - The paper states the magnetic logical's representative keeps changing
+    every round forever (m1 -> e -> m2 -> reabsorbed, cycling with period
+    3), not just during a one-time startup. This was the leading candidate
+    explanation for the brute-force search's seam exception, and it holds
+    up as a description of THAT (non-minimal) representative -- but the
+    true minimal logical above has no such round-to-round hand-off issue at
+    all, so the paper's cycling description evidently applies to a
+    non-minimal choice of representative on their side too, not to
+    something unavoidable about the logical class itself.
+  - Tested this session, still relevant as findings about DIFFERENT circuit
+    variants (not about Vertical X/Horizontal X specifically, which is now
+    resolved above): wrapping the circuit's time axis after 3 steps instead
+    of 6 does NOT produce a self-consistent code with the full 6 logical
+    dimensions -- either fully non-deterministic (small lattices) or, at
+    larger sizes, consistent but with only 3 deterministic dimensions
+    instead of 6. Separately, prepending 3 warm-up layers (t=-3,-2,-1,
+    fusions rZZ/gXX/bZZ) while keeping the old t_max->0 wraparound breaks
+    exactly the green-Z and blue-Z checks in the last cycle (confirmed at
+    Lx=6, 9, 12); a naive repair attempt (XOR-ing in the "cycle -1" version
+    of the same check) did not restore determinism. Neither experiment
+    changes anything about the base construction's Vertical X/Horizontal X,
+    which don't involve either variant.
+
+
+4. Open questions
+------------------
+  - Whether the winding-loop representative (found by the period-6 linear
+    solve) or the stationary construction (found by hand) is closer to a
+    "canonical" choice in some more principled sense, and whether the
+    stationary construction's weight (128 at Lx=Ly=12 for both) is provably
+    minimal across the whole coset, or just lighter than the two
+    alternatives compared so far.
+  - Whether the warm-up-layer circuit's broken green-Z/blue-Z checks can be
+    repaired using some combination of the new t=-3..-1 records (the direct
+    XOR-with-cycle(-1) attempt failed; a systematic nullspace search on the
+    warm-up circuit, seeded with everything already known deterministic, has
+    not yet been run). Orthogonal to the now-solved Vertical X/Horizontal X
+    question -- this concerns the separate warm-up-layer circuit variant.

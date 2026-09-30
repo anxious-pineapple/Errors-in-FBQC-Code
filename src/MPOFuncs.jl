@@ -1,6 +1,7 @@
 module MPOFuncs
+using ITensors: @OpName_str, @SiteType_str   # no longer exported by ITensors ≥ 0.8
 
-using ITensors, Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations, SparseArrays
+using ITensors, ITensorMPS, Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations, SparseArrays
 export beamsplitter!, swap_nextsite!, swap_ij!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 # export ITensors, beamsplitter!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 
@@ -296,19 +297,23 @@ function drho(rho, p, t)
     algo="naive"
     no_cavs = length(sites) - 1
 
+    # Cascaded Hamiltonian (supp. mat. Eq. S1) H = (i/2)[Σᵢ (√γ c† + Σ_{j<i} gⱼ* aⱼ†) gᵢ aᵢ - h.c.]
+    # and L₀ = √γ c + Σᵢ gᵢ aᵢ (Eq. S2). The h.c. terms carry the conjugate couplings, since g is complex.
     H = OpSum()
     H += "I",1
     L_0 = OpSum()
     L_0 += rg,"A",1
 
     for i=2:no_cavs+1
-        L_0 += gv_f[i-1](t),"A",i
-        H += (0.5im*rg*gv_f[i-1](t)),"Adag",1,"A",i
-        H -= (0.5im*rg*gv_f[i-1](t)),"A",1,"Adag",i
+        gᵢ = gv_f[i-1](t)
+        L_0 += gᵢ,"A",i
+        H += (0.5im*rg*gᵢ),"Adag",1,"A",i
+        H -= (0.5im*rg*conj(gᵢ)),"A",1,"Adag",i
 
         for j=2:i-1
-            H += (0.5im*gv_f[j-1](t)*gv_f[i-1](t)),"Adag",j,"A",i
-            H -= (0.5im*gv_f[j-1](t)*gv_f[i-1](t)),"A",j,"Adag",i
+            gⱼ = gv_f[j-1](t)
+            H += (0.5im*conj(gⱼ)*gᵢ),"Adag",j,"A",i
+            H -= (0.5im*gⱼ*conj(gᵢ)),"A",j,"Adag",i
         end
     end
 
@@ -327,10 +332,12 @@ function drho(rho, p, t)
     drho_ -= LdL_rho
     drho_ -= swapprime(conj(deepcopy(LdL_rho)), 1,0)
 
+    # Dephasing D[√κ σz] with κ = deph/2, so the emitter coherence dephases at rate deph (same as g2)
     if deph!= 0
+        κ = deph / 2
         L_1 = op("Sz",sites[1])
-        drho_ += deph*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
-        drho_ -= deph*rho
+        drho_ += κ*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
+        drho_ -= κ*rho
     end
 
     return drho_
@@ -486,6 +493,9 @@ function g_34_new(mpo_i, sites, no_cavs)
     return G_34/denom
 end
 
+#= Old implementation (ODE-based, Kiilerich & Mølmer supp. mat. Eqs. S10-S12), kept for reference.
+   Replaced by the closed-form g2 below. Known issues: √deph σz dephasing convention, real modes only,
+   regularised g(0), and poor convergence in dt for modes ≥ 2 caused by the 1/√t singularity in the ODEs.
 function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false)
 
     basis = SpinBasis(1//2)
@@ -568,6 +578,106 @@ function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false)
     # usual
     # return gv_f
     # only for test
+    return gv_f, eigenvals
+end
+=#
+
+# 4th-order cumulative integral on a uniform grid of step dt (exact for cubics, one-sided at the ends)
+function cumul_int(y, dt)
+    n = length(y); I = zeros(eltype(y), n)
+    for k in 1:n-1
+        s = k == 1   ? 9y[1] + 19y[2] - 5y[3] + y[4] :
+            k == n-1 ? 9y[n] + 19y[n-1] - 5y[n-2] + y[n-3] :
+                       -y[k-1] + 13y[k] + 13y[k+1] - y[k+2]
+        I[k+1] = I[k] + s * dt / 24
+    end
+    return I
+end
+
+# Weights w with Σₖ wₖ yₖ = cumul_int(y, dt)[end], i.e. the same quadrature rule applied to the whole interval
+function quad_weights(n, dt)
+    w = zeros(n)
+    for k in 1:n-1
+        idx, c = k == 1   ? (1:4, (9, 19, -5, 1)) :
+                 k == n-1 ? ((n:-1:n-3), (9, 19, -5, 1)) :
+                            (k-1:k+2, (-1, 13, 13, -1))
+        w[idx] .+= c .* dt ./ 24
+    end
+    return w
+end
+
+# Virtual-cavity couplings gᵥᵢ(t) for the output modes of a decaying, dephased emitter
+# (Kiilerich & Mølmer, arXiv:1902.09833 and its supp. mat.). Returns gv_f (functions of t, complex)
+# and eigenvals (photon number nᵢ in each mode, Σnᵢ ≈ 1).
+#   deph: pure dephasing rate of the emitter coherence (jump operator √(deph/2) σz, matching drho).
+#   Δ:    emitter detuning. Δ ≠ 0 also needs a Δ·c†c term in drho's Hamiltonian (not implemented there).
+#   ε_res: mode j is only resolved once it has carried ε_res of its photon (see comments below).
+function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false, Δ=0.0, ε_res=1e-10)
+
+    basis = SpinBasis(1//2)
+    a = sigmam(basis)
+    at = sigmap(basis)
+    H = Δ * at * a
+    # D[√κ σz] damps the coherence at 2κ since σz² = I, so κ = deph/2 gives a dephasing rate of deph
+    J = [sqrt(gamma)*a, sqrt(deph/2)*sigmaz(basis)]
+
+    t_list = [0:dt:t_fin;]
+    t_size = length(t_list)
+    corel_m = zeros(ComplexF64, t_size, t_size)
+
+    ρ₀ = spinup(basis) ⊗ dagger(spinup(basis))
+
+    tout, ρt_master = timeevolution.master(t_list, ρ₀, H, J; dt=dt)
+    for i=1:t_size-1
+        rhot = ρt_master[i]
+        corel_m[i,i:end] = timecorrelations.correlation(t_list[1:(t_size-i+1)], rhot, H, J, at, a)
+    end
+    corel_m[t_size,t_size] = 0.0
+    # Row i holds ⟨σ₊(tⱼ)σ₋(tᵢ)⟩ for j ≥ i. Since ⟨σ₊(s)σ₋(t)⟩* = ⟨σ₊(t)σ₋(s)⟩ the lower triangle is the adjoint
+    corel_m = corel_m + corel_m' - Diagonal(diag(corel_m))
+    # The modes solve the integral eigenproblem ∫ C(t,t') v(t') dt' = n v(t) with ∫|v|²dt = 1.
+    # Discretising with quadrature weights w gives Σₖ C(t,tₖ) wₖ v(tₖ) = n v(t); substituting x = √w·v makes it
+    # Hermitian: (√w C √w) x = n x, with ∫|v|² = Σₖ wₖ|vₖ|² = |x|² = 1. Using cumul_int's own weights makes
+    # the modes orthonormal under exactly the integral the recursion below uses. Plain eigen(C)·dt corresponds to
+    # wₖ = dt everywhere, which over-weights the end points (the emitter is brightest at t = 0) by ~dt/2.
+    sw = sqrt.(quad_weights(t_size, dt))
+    # eigenvalues are the photon numbers nᵢ (Σnᵢ ≈ 1), columns of eigens the mode functions vᵢ(t) (arbitrary phase)
+    eigenvals, eigens = eigen(Hermitian(sw .* corel_m .* sw'); sortby=-)
+    eigens ./= sw
+
+    # Virtual-cavity chain, solved in closed form.
+    # With uⱼ = vⱼ^(j-1) the mode reaching cavity j, Nⱼ(t) = ∫₀ᵗ |uⱼ|² and gⱼ = -uⱼ*/√Nⱼ (S11), the cavity obeys
+    #   dαᵢⱼ/dt = -½|gⱼ|²αᵢⱼ - gⱼ vᵢ^(j-1),  αᵢⱼ(0) = 0,   output vᵢ^(j) = vᵢ^(j-1) + gⱼ* αᵢⱼ   (S10, S12)
+    # which integrates exactly (the decay factor is √(Nⱼ(s)/Nⱼ(t))) to
+    #   αᵢⱼ(t) = ∫₀ᵗ uⱼ* vᵢ^(j-1) / √Nⱼ(t),   vᵢ^(j) = vᵢ^(j-1) - uⱼ ∫₀ᵗ uⱼ* vᵢ^(j-1) / Nⱼ(t)
+    # i.e. Gram-Schmidt done locally in time, with no 1/√t anywhere in the recursion.
+    #
+    # t = 0: uⱼ ~ t^(j-1), so gⱼ ~ ∓√(2j-1)/√t diverges. We store Gⱼ = √t·gⱼ, which is finite, and return
+    # gv_f[j](t) = Gⱼ(t)/√max(t, t_min) with t_min = dt/2, so the MPO evolution (which starts at t = 0) sees a
+    # finite coupling. Cavity 1 is therefore under-coupled for t < t_min, letting through ~t_min of the leading edge.
+    # The early-time t^(j-1) behaviour of higher modes is below what the discretised eigenvectors resolve,
+    # so mode j is only resolved from t_res[j], where it has carried ε_res of its photon (Nⱼ > ε_res).
+    # Before that, later modes are set to 0 and gⱼ continues as the c/√t form matched at t_res[j].
+    t_min = dt / 2
+    V = copy(eigens[:, 1:no_cavs])           # V[:,i] holds vᵢ^(j), updated as each cavity j is added
+    G = zeros(ComplexF64, t_size, no_cavs)   # Gⱼ = √t·gⱼ on the grid
+    gv_f = [;]
+    for j=1:no_cavs
+        u = V[:, j]
+        N = cumul_int(abs2.(u), dt)
+        k0 = findfirst(N .> ε_res)
+        k0 === nothing && error("g2: mode $j never exceeds ε_res = $ε_res (too many cavities for this data, or ε_res ≤ 0)")
+        r = k0:t_size
+        G[r, j] = -conj.(u[r]) ./ sqrt.(N[r]) .* sqrt.(t_list[r])
+        G[1:k0-1, j] .= G[k0, j]
+        for i=j+1:no_cavs
+            overlap = cumul_int(conj.(u) .* V[:, i], dt)     # ∫₀ᵗ uⱼ* vᵢ^(j-1)
+            V[r, i] .-= u[r] .* overlap[r] ./ N[r]
+            V[1:k0-1, i] .= 0.0
+        end
+        G_spl = cubic_spline_interpolation(0:dt:t_fin, G[:, j]; extrapolation_bc=Line())
+        push!(gv_f, t -> G_spl(t) / sqrt(max(t, t_min)))
+    end
     return gv_f, eigenvals
 end
 
@@ -693,6 +803,9 @@ function init(par_list, sites, rg)
     return par_list
 end
 
+# pre = K = -iH - ½L₀†L₀ - ½κ and post = K†, so dρ/dt = Kρ + ρK† + L₀ρL₀† + κσzρσz. For the cascade
+#   K = -½[γc†c + Σᵢ|gᵢ|²aᵢ†aᵢ + 2√γ Σᵢ gᵢ* aᵢ†c + 2 Σ_{i>j} gᵢ* gⱼ aᵢ†aⱼ + κ]
+# (g is complex, so the coefficients of raising operators aᵢ† carry gᵢ*)
 function pre_term2(par_list, sites, g_f, rg, dep, t)
     cda, cad, ada, ada_pre, ada_post = par_list
     no_cavs = length(sites) - 1
@@ -701,10 +814,10 @@ function pre_term2(par_list, sites, g_f, rg, dep, t)
     pre += (rg^2),"N",1
     pre = MPO(pre, sites)
     for i=1:no_cavs
-        pre += cad[i] * 2 * g_f[i](t)
-        pre += ada[i] * g_f[i](t)^2
+        pre += cad[i] * 2 * conj(g_f[i](t))
+        pre += ada[i] * abs2(g_f[i](t))
         for j=1:i-1
-            pre += ada_pre[(i,j)] * 2 * g_f[j](t) * g_f[i](t)
+            pre += ada_pre[(i,j)] * 2 * g_f[j](t) * conj(g_f[i](t))
         end
     end
     return (-0.5 * pre)
@@ -719,12 +832,12 @@ function post_term2(par_list, sites, g_f, rg, dep, t)
     post = MPO(post, sites)
     for i=1:no_cavs
         post += cda[i] * 2 * g_f[i](t)
-        post += ada[i] * g_f[i](t)^2
+        post += ada[i] * abs2(g_f[i](t))
         for j=1:i-1
-            post += ada_post[(j,i)] * 2 * g_f[j](t) * g_f[i](t)
+            post += ada_post[(j,i)] * 2 * conj(g_f[j](t)) * g_f[i](t)
         end
     end
-    return (-0.5 * post)    
+    return (-0.5 * post)
 end
 
 #func calc drho/dt
@@ -735,21 +848,21 @@ function drho_test2(rho, p, t)
     cut_off=1E-10
     algo="naive"
     no_cavs = length(sites) - 1
+    κ = deph / 2    # dephasing D[√κ σz]: the emitter coherence dephases at rate deph (same as g2)
 
-
-    pre = pre_term2(par_list, sites, gv_f, rg, deph, t)
-    post = post_term2(par_list, sites, gv_f, rg, deph, t)
+    pre = pre_term2(par_list, sites, gv_f, rg, κ, t)
+    post = post_term2(par_list, sites, gv_f, rg, κ, t)
     L_0, L_0d = Lo(sites, gv_f, rg, t)
 
     pre_rho = apply(pre, rho; alg=algo, cutoff=cut_off)
     post_rho = apply(rho, post; alg=algo, cutoff=cut_off)
-    
+
     drho_ = pre_rho + post_rho
     drho_ += apply(apply(L_0 , rho; alg=algo, cutoff=cut_off), L_0d; alg=algo, cutoff=cut_off)
 
     if deph!= 0
         L_1 = op("Sz",sites[1])
-        drho_ += deph*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
+        drho_ += κ*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
     end
 
     return drho_
@@ -801,16 +914,17 @@ end
 
 ##############################################################################
 
+# Same K / K† as pre_term2 / post_term2 above (coefficients of raising operators aᵢ† carry gᵢ*)
 function pre_term(sites, g_f, rg, dep, t)
     no_cavs = length(sites) - 1
     pre = OpSum()
     pre += (rg^2),"A",1,"Adag",1
     pre += dep,"I",1
     for i=1:no_cavs
-        pre += (2*rg*g_f[i](t)),"A",1,"Adag",i+1
-        pre += (g_f[i](t)^2),"Adag",i+1,"A",i+1
+        pre += (2*rg*conj(g_f[i](t))),"A",1,"Adag",i+1
+        pre += abs2(g_f[i](t)),"Adag",i+1,"A",i+1
         for j=1:i-1
-            pre += (2*g_f[j](t)*g_f[i](t)),"Adag",i+1,"A",j+1
+            pre += (2*g_f[j](t)*conj(g_f[i](t))),"Adag",i+1,"A",j+1
         end
     end
     pre = -0.5 * MPO(pre, sites)
@@ -824,9 +938,9 @@ function post_term(sites, g_f, rg, dep, t)
     post += dep,"I",1
     for i=1:no_cavs
         post += (2*rg*g_f[i](t)),"Adag",1,"A",i+1
-        post += (g_f[i](t)^2),"Adag",i+1,"A",i+1
+        post += abs2(g_f[i](t)),"Adag",i+1,"A",i+1
         for j=i+1:no_cavs
-            post += (2*g_f[j](t)*g_f[i](t)),"Adag",i+1, "A",j+1
+            post += (2*g_f[j](t)*conj(g_f[i](t))),"Adag",i+1, "A",j+1
         end
     end
     post = -0.5 * MPO(post, sites)
@@ -853,21 +967,21 @@ function drho_test(rho, p, t)
     cut_off=1E-10
     algo="naive"
     no_cavs = length(sites) - 1
+    κ = deph / 2    # dephasing D[√κ σz]: the emitter coherence dephases at rate deph (same as g2)
 
-
-    pre = pre_term(sites, gv_f, rg, deph, t)
-    post = post_term(sites, gv_f, rg, deph, t)
+    pre = pre_term(sites, gv_f, rg, κ, t)
+    post = post_term(sites, gv_f, rg, κ, t)
     L_0, L_0d = Lo(sites, gv_f, rg, t)
 
     pre_rho = apply(pre, rho; alg=algo, cutoff=cut_off)
     post_rho = apply(rho, post; alg=algo, cutoff=cut_off)
-    
+
     drho_ = pre_rho + post_rho
     drho_ += apply(apply(L_0 , rho; alg=algo, cutoff=cut_off), L_0d; alg=algo, cutoff=cut_off)
 
     if deph!= 0
         L_1 = op("Sz",sites[1])
-        drho_ += deph*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
+        drho_ += κ*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
     end
 
     return drho_

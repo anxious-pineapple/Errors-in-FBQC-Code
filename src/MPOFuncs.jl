@@ -5,6 +5,53 @@ using ITensors, ITensorMPS, Integrals, QuantumOptics, LinearAlgebra, Interpolati
 export beamsplitter!, swap_nextsite!, swap_ij!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 # export ITensors, beamsplitter!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 
+#= ===================================== EVOLUTION FUNCTIONS: OVERVIEW =====================================
+Pipeline: g2 -> gᵢ(t) couplings  ->  drho* gives dρ/dt  ->  cash_karppe takes one adaptive step
+          ->  cash_karppe_evolve* loops to t_final and traces out the emitter.
+
+1. Couplings to the virtual cavities
+   g2                      Emitter correlation ⟨σ₊(t)σ₋(t')⟩ (QuantumOptics) -> eigenmodes vᵢ(t) -> closed-form
+                           cavity couplings gᵢ(t). Returns (gv_f, eigenvals).                       IN USE
+   cumul_int, quad_weights 4th-order running integral + matching quadrature weights (modes orthonormal
+                           under the same integral). Helpers for g2.                                IN USE
+   g2 (old, ODE-based)     Previous version incl. a_, vᵢⁱ⁻¹.                                         COMMENTED OUT
+
+2. Right-hand side dρ/dt   (all: dephasing D[√κ σz] with κ = deph/2, same as g2)
+   drho                    Lindblad form -i[H,ρ] + L₀ρL₀† - ½{L₀†L₀,ρ} + dephasing. Rebuilds H, L₀ from OpSum
+                           every call; L₀†L₀ as an MPO-MPO product.                  works, only used by the
+                                                                                     broken cash_karppe_evolve
+   drho_test               Non-Hermitian form Kρ + ρK† + L₀ρL₀† + κσzρσz, K written out by hand.
+                           Fastest (~36 ms/call at 4 cavities).                                     IN USE
+     pre_term, post_term,  Build K, K†, L₀/L₀† as MPOs. Emitter term is "A",1,"Adag",1 = c c† (not c†c):
+     Lo                    adds -γρ, which the per-step renormalisation removes.                    IN USE
+   drho_test2              Same equation as drho_test but sums cached per-term MPOs instead of rebuilding
+                           them. ~4x SLOWER at 4 cavities, ~6x at 8 (MPO additions + K bond dim 4 vs 3).
+                                                                                                    UNUSED
+     init, pre_term2,      init caches the per-term MPOs once; pre/post_term2 combine them into K, K†
+     post_term2            at time t.                                                               UNUSED
+   drho2                   Old fixed-step RHS. Only exists in ArchivedCode/ArchivedFunctions.jl.   MISSING
+
+3. Time stepping
+   cash_karppe (+ k_gen)   One adaptive Cash-Karp RK45 step: error estimate at dt -> new step size -> redo the
+                           step at that size (12 RHS calls, never rejects). Returns (ρ_new, dt_used). IN USE
+
+4. Full evolution (emitter excited -> photon state in the virtual cavities)
+   cash_karppe_evolve_test   drho_test, g2 on dt/5 grid. kwargs progress=true, progress_every=1.0,
+                             cutoff=nothing (1e-12 recommended: truncate! ρ each step; ~5x faster at 4
+                             cavities, result changes ~1e-4). Returns (mpo, sites, eigenvals).
+                             IN USE BY EVERY SCRIPT
+   cash_karppe_evolve        drho, g2 on dt/2 grid. Returns (mpo, sites).
+                             BROKEN: g_f = g2(...) does not unpack g2's tuple (still exported)
+   cash_karppe_evolve_test2  drho_test2, g2 on dt/2 grid. Returns (mpo, sites, expect_list).
+                             BROKEN: same g2 unpacking bug
+   create_MPO                Fixed-step RK4 with drho2 + g2_ (neither defined). Returns (mpo, sites, expect_list).
+                             DEAD CODE
+
+5. Progress display
+   print_progress          One-line bar redrawn in place: t/t_final, dt, χ, elapsed, ETA.
+   fmt_secs                Seconds -> "42s" / "3m05s".
+========================================================================================================== =#
+
 
 ##### Defining States Needed #####
 #-------------------------------------------------------------------------

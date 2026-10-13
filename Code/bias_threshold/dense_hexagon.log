@@ -1,0 +1,72 @@
+stim 1.16.0
+[hexagon] cell 1 ok (0s)
+tiles = 16, hexagons = 48, points = 96
+[hexagon] cell 3 ok (0s)
+points = 96, total_t = 12, qubits = 1152
+fusions = 576, measurement records = 1152
+[hexagon] cell 14 ok (2s)
+hexagons = 48, cycles = 2 -> detectors = 192 (expect 192)
+detector weight distribution: {12: 192}
+[hexagon] cell 18 ok (0s)
+hexagon checks: 192, rank 190
+[hexagon] cell 19 ok (0s)
+DEM built: all 192 detectors deterministic
+[hexagon] cell 21 ok (2s)
+st5: n_cycles=4, total_t=24, n_qubits=2304, nmeas=2304
+[hexagon] cell 29 ok (4s)
+x: internal {1: 'green', 2: 'blue', 0: 'red'}  crossing(k,k+1) {0: 'blue', 2: 'green', 1: 'red'}
+y: internal {0: 'green', 1: 'blue', 2: 'red'}  crossing(k,k+1) {1: 'green', 2: 'blue', 0: 'red'}
+[hexagon] cell 31 ok (0s)
+Timelike X weight 144, Timelike Z weight 144
+[hexagon] cell 33 ok (0s)
+Vertical Z weight 144, Horizontal Z weight 144
+[hexagon] cell 35 ok (0s)
+Vertical X weight 128, Horizontal X weight 128
+[hexagon] cell 37 ok (0s)
+[hexagon] cell 41 ok (0s)
+[hexagon] cell 44 ok (0s)
+[hexagon] cell 47 ok (0s)
+[hexagon] cell 57 ok (0s)
+[hexagon] cell 64 ok (0s)
+H-fusions: 288 of 576 fusions
+X checks read only XX records: True
+Z checks read only ZZ records: True
+direct rule == §3 checks with records swapped on XX steps: True
+detector weight distribution: {12: 192}
+[hexagon] cell 76 ok (2s)
+  [built H-fusion Lx=6: outcomes=288 checks=48 logicals=6]
+H-fusion circuit Lx=6: noiseless reference sample all-zero: True
+  [built H-fusion Lx=9: outcomes=972 checks=162 logicals=6]
+H-fusion circuit Lx=9: noiseless reference sample all-zero: True
+[hexagon] cell 82 ok (5s)
+[hexagon] cell 86 ok (0s)
+[hexagon] cell 98 ok (0s)
+XX = first record, ZZ = second record of every fusion: OK
+  [built Lx=12: outcomes=2304 checks=382 logicals=6]
+  [bias structure regular fusion Lx=12: outcomes=2304 edges=2304]
+uniform-weight bias matcher vs §6 matcher: predictions differ on 0/2000 shots, matching weight (in edge units) differs on 0
+[hexagon] cell 108 ok (32s)
+[hexagon] cell 117 ok (0s)
+[hexagon] cell 121 ok (0s)
+  [built Lx=18: outcomes=7776 checks=1294 logicals=6]
+  [bias structure regular fusion Lx=18: outcomes=7776 edges=7776]
+  [built Lx=24: outcomes=18432 checks=3070 logicals=6]
+  [bias structure regular fusion Lx=24: outcomes=18432 edges=18432]
+[hexagon] meas δ=0.0625: 12x18 1.390% (two-pass)  18x24 1.360% (two-pass)  (683s)
+[hexagon] meas δ=0.1875: 12x18 1.181% (two-pass)  18x24 1.193% (two-pass)  (212s)
+[hexagon] meas δ=0.3125: 12x18 1.109% (two-pass)  18x24 1.081% (two-pass)  (162s)
+[hexagon] meas δ=0.4375: 12x18 1.034% (two-pass)  18x24 1.053% (two-pass)  (190s)
+[hexagon] meas δ=0.5625: 12x18 1.014% (two-pass)  18x24 1.004% (two-pass)  (217s)
+[hexagon] meas δ=0.6875: 12x18 1.012% (two-pass)  18x24 0.996% (two-pass)  (207s)
+[hexagon] meas δ=0.8125: 12x18 1.054% (two-pass)  18x24 1.021% (two-pass)  (219s)
+[hexagon] meas δ=0.9375: 12x18 1.220% (two-pass)  18x24 1.071% (two-pass)  (244s)
+[hexagon] meas δ=1.0000: recomputed 12x18 1.748% vs notebook 1.748%  (reproduction check)
+[hexagon] meas δ=1.0000: 12x18 1.748% (notebook)  18x24 1.027% (fallback)  (768s)
+  [erasure graph Lx=12, p_meas=1e-09: 2304 edges (one per outcome)]
+  [erasure graph Lx=18, p_meas=1e-09: 7776 edges (one per outcome)]
+  [erasure graph Lx=24, p_meas=1e-09: 18432 edges (one per outcome)]
+[hexagon] erasure δ=0.1250: 12x18 12.208% (two-pass)  18x24 12.334% (two-pass)  (959s)
+[hexagon] erasure δ=0.3750: 12x18 11.968% (two-pass)  18x24 11.995% (two-pass)  (451s)
+[hexagon] erasure δ=0.6250: 12x18 11.650% (two-pass)  18x24 11.386% (two-pass)  (485s)
+[hexagon] erasure δ=0.8750: 12x18 11.566% (two-pass)  18x24 11.461% (two-pass)  (490s)
+[hexagon] done

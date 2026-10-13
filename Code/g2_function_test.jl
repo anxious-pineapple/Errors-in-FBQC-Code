@@ -7,7 +7,7 @@ using QuantumOptics, LinearAlgebra, Interpolations, Plots
 
 gamma = 1 
 deph = 0.1
-t_fin = 10
+t_fin = 20
 dt = 0.01
 no_cavs = 10
 Δ = 0.0     # emitter detuning from the rotating frame
@@ -133,8 +133,8 @@ return gv_f, eigenvals
 using MPOFuncs
 
 g,e_vals = g2(gamma, deph, t_fin, dt, no_cavs)
-
-
+sum(e_vals[1:10])
+1-sum(e_vals[1:200])
 ########################################################
 
 # Comparison plot: old equal-weight modes (eigen(C)·dt) vs the quadrature-weighted modes (eigens above), modes 1-3.

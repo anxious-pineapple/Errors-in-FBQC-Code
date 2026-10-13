@@ -583,6 +583,7 @@ end
 =#
 
 # 4th-order cumulative integral on a uniform grid of step dt (exact for cubics, one-sided at the ends)
+#For g2
 function cumul_int(y, dt)
     n = length(y); I = zeros(eltype(y), n)
     for k in 1:n-1
@@ -595,6 +596,7 @@ function cumul_int(y, dt)
 end
 
 # Weights w with Σₖ wₖ yₖ = cumul_int(y, dt)[end], i.e. the same quadrature rule applied to the whole interval
+#For g2
 function quad_weights(n, dt)
     w = zeros(n)
     for k in 1:n-1
@@ -721,6 +723,21 @@ function cash_karppe(sys, sys_sites, d_rho, t, dt; tol=0.1, p_ = nothing, max_dt
 
     return better_sys, new_dt
     # return sys, new_dt
+end
+
+fmt_secs(s) = s < 60 ? "$(round(Int, s))s" : "$(div(round(Int, s), 60))m$(lpad(rem(round(Int, s), 60), 2, '0'))s"
+
+# One-line progress bar for the time evolution, redrawn in place (\r), so it works in the terminal and in Jupyter.
+# The ETA assumes the remaining simulated time runs at the average speed so far. It is optimistic, since steps
+# get slower as the bond dimension of rho grows.
+function print_progress(t, t_final, dt, chi, t_start; width=30)
+    frac = clamp(t / t_final, 0, 1)
+    n = round(Int, frac * width)
+    elapsed = time() - t_start
+    eta = frac > 0 ? fmt_secs(elapsed * (1 - frac) / frac) : "?"
+    print("\r[", "="^n, " "^(width - n), "] t = ", round(min(t, t_final), digits=2), "/", t_final,
+          "  dt = ", round(dt, sigdigits=2), "  χ = ", chi, "  elapsed ", fmt_secs(elapsed), "  ETA ~", eta, "    ")
+    flush(stdout)
 end
 
 function cash_karppe_evolve(no_cavs, depha, gamma, dt, t_final)
@@ -987,7 +1004,10 @@ function drho_test(rho, p, t)
     return drho_
 end
 
-function cash_karppe_evolve_test(no_cavs, depha, gamma, dt, t_final)
+# cutoff: if set (e.g. 1e-12), rho is compressed with truncate! after every step. The Cash-Karp update adds MPOs
+# without truncating, so otherwise the bond dimension keeps growing with numerical noise (4 cavities at t = 1:
+# χ = 45, of which ~14 survive cutoff 1e-12). nothing = no truncation (the original behaviour).
+function cash_karppe_evolve_test(no_cavs, depha, gamma, dt, t_final; progress=true, progress_every=1.0, cutoff=nothing)
     g_f, eigenvals = g2(gamma, depha, t_final, dt/5, no_cavs)
 
     sys_sites = siteinds("Qudit", no_cavs+1, dim=3)
@@ -998,14 +1018,22 @@ function cash_karppe_evolve_test(no_cavs, depha, gamma, dt, t_final)
     t = 0.0
     expect_list=[]
     # t_list = [t,]
+    t_start = time()
+    last_print = -Inf
 
     while t<t_final
         sys_, dt_ = cash_karppe(sys, sys_sites, drho_test, t, dt; tol=1E-4, p_= (sys_sites, g_f, sqrt(gamma), depha), max_dt = dt*10)
         t += dt_
         sys = sys_/trace(sys_, sys_sites)
-        # push!(expect_list, ITensors.expect(sys, sys_sites))
-        # push!(t_list, t)
+        isnothing(cutoff) || truncate!(sys; cutoff=cutoff)
+
+        #progress bar
+        if progress && (time() - last_print >= progress_every || t >= t_final)
+            print_progress(t, t_final, dt_, maxlinkdim(sys), t_start)
+            last_print = time()
+        end
     end
+    progress && println()
 
     copy_sys = MPO(no_cavs)
     copy_sys[1] = sys[1] * delta(sys_sites[1], sys_sites[1]') * sys[2]

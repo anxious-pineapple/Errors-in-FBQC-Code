@@ -1,0 +1,10 @@
+circuit,delta,cross_12x18,cross_18x24,source_12x18,source_18x24
+§4 plain,0.0,0.150417,0.155407,notebook,notebook
+§4 plain,0.125,0.129939,0.127175,two-pass,two-pass
+§4 plain,0.25,0.120536,0.119532,notebook,notebook
+§4 plain,0.375,0.117984,0.118691,two-pass (tie-aware coarse centre),fallback
+§4 plain,0.5,0.119962,0.116614,notebook,notebook
+§4 plain,0.625,0.117991,0.118402,two-pass,two-pass
+§4 plain,0.75,0.119114,0.120085,notebook,notebook
+§4 plain,0.875,0.120844,0.120047,two-pass,two-pass
+§4 plain,1.0,0.124357,0.125224,notebook,notebook

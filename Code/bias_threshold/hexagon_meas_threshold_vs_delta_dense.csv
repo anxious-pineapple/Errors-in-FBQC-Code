@@ -1,0 +1,18 @@
+circuit,delta,cross_12x18,cross_18x24,source_12x18,source_18x24
+regular fusion,0.0,0.0149658,0.0145886,notebook,notebook
+regular fusion,0.0625,0.0138978,0.0136008,two-pass,two-pass
+regular fusion,0.125,0.0126149,0.0124614,notebook,notebook
+regular fusion,0.1875,0.011811,0.0119327,two-pass,two-pass
+regular fusion,0.25,0.0114144,0.0111644,notebook,notebook
+regular fusion,0.3125,0.0110911,0.0108123,two-pass,two-pass
+regular fusion,0.375,0.0108094,0.0106098,notebook,notebook
+regular fusion,0.4375,0.0103394,0.0105269,two-pass,two-pass
+regular fusion,0.5,0.0100316,0.0100999,notebook,notebook
+regular fusion,0.5625,0.0101356,0.0100372,two-pass,two-pass
+regular fusion,0.625,0.00997016,0.0101335,notebook,notebook
+regular fusion,0.6875,0.0101182,0.00995995,two-pass,two-pass
+regular fusion,0.75,0.0101402,0.00999976,notebook,notebook
+regular fusion,0.8125,0.0105422,0.0102141,two-pass,two-pass
+regular fusion,0.875,0.0110208,0.0104477,notebook,notebook
+regular fusion,0.9375,0.0122029,0.0107125,two-pass,two-pass
+regular fusion,1.0,0.0174802,0.0102658,notebook,fallback

@@ -1,0 +1,10 @@
+circuit,delta,cross_12x18,cross_18x24,source_12x18,source_18x24
+regular fusion,0.0,0.12291,0.126235,notebook,notebook
+regular fusion,0.125,0.122082,0.123339,two-pass,two-pass
+regular fusion,0.25,0.120608,0.120244,notebook,notebook
+regular fusion,0.375,0.119677,0.119955,two-pass,two-pass
+regular fusion,0.5,0.119593,0.120069,notebook,notebook
+regular fusion,0.625,0.116499,0.113856,two-pass,two-pass
+regular fusion,0.75,0.114335,0.115941,notebook,notebook
+regular fusion,0.875,0.115661,0.114607,two-pass,two-pass
+regular fusion,1.0,0.126195,0.126126,notebook,notebook

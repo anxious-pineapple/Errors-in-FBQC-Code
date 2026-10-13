@@ -1,0 +1,218 @@
+stim 1.16.0
+[hexagonmod2] cell 1 ok (0s)
+tiles = 16, hexagons = 48, points = 96, period = (12, 12)
+[hexagonmod2] cell 3 ok (0s)
+plain fusion:  rec[-2] = XX   rec[-1] = ZZ
+slot XX is rec[-2], slot ZZ is rec[-1]: OK
+[hexagonmod2] cell 10 ok (0s)
+(x - t) % 3 == 0  is equivalent to the per-class Hadamard table: OK
+
+vertex class -> the steps it is Hadamarded at:
+     red vertex (e.g. (0, 0), x%3=0): t%3==0 -> t in [0, 3]  = the red steps   SELF-ALIGNED
+   green vertex (e.g. (1, 1), x%3=1): t%3==1 -> t in [1, 4]  = the green steps   SELF-ALIGNED
+    blue vertex (e.g. (2, 0), x%3=2): t%3==2 -> t in [2, 5]  = the blue steps   SELF-ALIGNED
+
+what a fusion's slots read:
+              crossing edge (no Hadamard):  slot XX reads XX,  slot ZZ reads ZZ
+     internal edge (both ends Hadamarded):  slot XX reads ZZ,  slot ZZ reads XX
+
+=> internal-edge fusions have their two record names exchanged
+[hexagonmod2] cell 12 ok (0s)
+points = 96, total_t = 12, qubits = 1152
+fusions = 576, measurement records = 1152
+Hadamard layer covers 384 of 1152 qubits (expect one third)
+[hexagonmod2] cell 14 ok (2s)
+CHECK_SPEC agrees with the step schedule: OK
+every check has crossing pattern ZZ, XX, XX, ZZ and internal XX, ZZ, ZZ, XX
+[hexagonmod2] cell 18 ok (0s)
+blue hexagon @ (11, 1), boundary grouped by edge colour:
+   green crossing  (0, 1)-(11, 2)
+   green internal  (10, 2)-(10, 1)
+   green crossing  (11, 0)-(0, 0)
+     red internal  (0, 0)-(0, 1)
+     red crossing  (11, 2)-(10, 2)
+     red crossing  (10, 1)-(11, 0)
+
+hexagons = 48, cycles = 2 -> 192 checks (expect 192)
+weight distribution: {12: 192}
+[hexagonmod2] cell 20 ok (0s)
+DEM built: all 192 detectors deterministic
+
+per-check has_flow:
+     red X:  32 valid /  32      red Z:  32 valid /  32    
+   green X:  32 valid /  32    green Z:  32 valid /  32    
+    blue X:  32 valid /  32     blue Z:  32 valid /  32    
+
+all 192 checks deterministic; rank = 190
+[hexagonmod2] cell 22 ok (83s)
+st6: n_cycles=4, total_t=24, n_qubits=2304, nmeas=2304
+[hexagonmod2] cell 24 ok (4s)
+x: same-x {1: 'green', 2: 'blue', 0: 'red'}  k->k+1 {0: 'blue', 2: 'green', 1: 'red'}
+y: same-y {0: 'green', 1: 'blue', 2: 'red'}  k->k+1 {1: 'green', 2: 'blue', 0: 'red'}
+same-x colour == vertex class, residue by residue: OK
+red's own residue: x -> p0 = 0, y -> p0 = 2
+[hexagonmod2] cell 26 ok (0s)
+       Timelike X (  timelike)  weight   144
+       Timelike Z (  timelike)  weight   144
+       Vertical Z (  marching)  weight   144
+     Horizontal Z (  marching)  weight   144
+       Vertical X (stationary)  weight   128
+     Horizontal X (stationary)  weight   128
+[hexagonmod2] cell 28 ok (0s)
+[hexagonmod2] cell 37 ok (0s)
+H-fusion:  slot XX reads ZZ   slot ZZ reads XX
+
+what a fusion's slots read, by step kind and edge kind:
+   step     edge | layer H H-fusion | slot XX reads
+     XX crossing |      --      yes | ZZ
+     XX internal |     yes       -- | ZZ
+     ZZ crossing |      --       -- | XX
+     ZZ internal |     yes      yes | XX
+=> exchanged on every XX-step fusion, on no ZZ-step fusion, whatever the edge kind
+
+(step kind, net Hadamard on the fusion) -> count: {('XX', True): 288, ('ZZ', False): 288}
+net Hadamard on every XX-step fusion and on no ZZ-step fusion: OK
+[hexagonmod2] cell 41 ok (0s)
+CHECK_SPEC_H  (each cell: internal / crossing slot)
+    blue X: t=0 red XX/XX   t=1 green XX/XX   t=3 red XX/XX   t=4 green XX/XX
+    blue Z: t=3 red ZZ/ZZ   t=4 green ZZ/ZZ   t=6 red ZZ/ZZ   t=7 green ZZ/ZZ
+     red X: t=4 green XX/XX   t=5 blue XX/XX   t=7 green XX/XX   t=8 blue XX/XX
+     red Z: t=1 green ZZ/ZZ   t=2 blue ZZ/ZZ   t=4 green ZZ/ZZ   t=5 blue ZZ/ZZ
+   green X: t=2 blue XX/XX   t=3 red XX/XX   t=5 blue XX/XX   t=6 red XX/XX
+   green Z: t=5 blue ZZ/ZZ   t=6 red ZZ/ZZ   t=8 blue ZZ/ZZ   t=9 red ZZ/ZZ
+
+H-fused fusions: 288 of 576
+CHECK_SPEC_H rows == CHECK_SPEC rows with the H-fused records exchanged: True
+[hexagonmod2] cell 43 ok (2s)
+  [   §4 plain Lx=12: nmeas=2304 detectors=384 edges=2304  (9s)]
+     §4 plain: noiseless reference sample all-zero: True
+  [§8 H-fusion Lx=12: nmeas=2304 detectors=384 edges=2304  (9s)]
+  §8 H-fusion: noiseless reference sample all-zero: True
+[hexagonmod2] cell 49 ok (24s)
+parallel decode == single-process decode:  erasure True   batch True
+[hexagonmod2] cell 50 ok (1s)
+XX slot = even record index, ZZ slot = the next one: OK
+     §4 plain: predictions differ on 247/2000 shots, matching weight differs on 0
+  §8 H-fusion: predictions differ on 276/2000 shots, matching weight differs on 0
+bias-aware matcher at uniform weights == §9 matcher up to equal-weight ties: OK
+[hexagonmod2] cell 56 ok (5s)
+[hexagonmod2] cell 65 ok (0s)
+[hexagonmod2] cell 70 ok (0s)
+  [   §4 plain Lx=18: nmeas=7776 detectors=1296 edges=7776  (32s)]
+  [   §4 plain Lx=24: nmeas=18432 detectors=3072 edges=18432  (102s)]
+[hexagonmod2] meas δ=0.0000: 12x18 2.319% (two-pass)  18x24 2.506% (two-pass)  (296s)
+stim 1.16.0
+[hexagonmod2] cell 1 ok (0s)
+tiles = 16, hexagons = 48, points = 96, period = (12, 12)
+[hexagonmod2] cell 3 ok (0s)
+plain fusion:  rec[-2] = XX   rec[-1] = ZZ
+slot XX is rec[-2], slot ZZ is rec[-1]: OK
+[hexagonmod2] cell 10 ok (0s)
+(x - t) % 3 == 0  is equivalent to the per-class Hadamard table: OK
+
+vertex class -> the steps it is Hadamarded at:
+     red vertex (e.g. (0, 0), x%3=0): t%3==0 -> t in [0, 3]  = the red steps   SELF-ALIGNED
+   green vertex (e.g. (1, 1), x%3=1): t%3==1 -> t in [1, 4]  = the green steps   SELF-ALIGNED
+    blue vertex (e.g. (2, 0), x%3=2): t%3==2 -> t in [2, 5]  = the blue steps   SELF-ALIGNED
+
+what a fusion's slots read:
+              crossing edge (no Hadamard):  slot XX reads XX,  slot ZZ reads ZZ
+     internal edge (both ends Hadamarded):  slot XX reads ZZ,  slot ZZ reads XX
+
+=> internal-edge fusions have their two record names exchanged
+[hexagonmod2] cell 12 ok (0s)
+points = 96, total_t = 12, qubits = 1152
+fusions = 576, measurement records = 1152
+Hadamard layer covers 384 of 1152 qubits (expect one third)
+[hexagonmod2] cell 14 ok (4s)
+CHECK_SPEC agrees with the step schedule: OK
+every check has crossing pattern ZZ, XX, XX, ZZ and internal XX, ZZ, ZZ, XX
+[hexagonmod2] cell 18 ok (0s)
+blue hexagon @ (11, 1), boundary grouped by edge colour:
+   green crossing  (0, 1)-(11, 2)
+   green internal  (10, 2)-(10, 1)
+   green crossing  (11, 0)-(0, 0)
+     red internal  (0, 0)-(0, 1)
+     red crossing  (11, 2)-(10, 2)
+     red crossing  (10, 1)-(11, 0)
+
+hexagons = 48, cycles = 2 -> 192 checks (expect 192)
+weight distribution: {12: 192}
+[hexagonmod2] cell 20 ok (0s)
+DEM built: all 192 detectors deterministic
+
+per-check has_flow:
+     red X:  32 valid /  32      red Z:  32 valid /  32    
+   green X:  32 valid /  32    green Z:  32 valid /  32    
+    blue X:  32 valid /  32     blue Z:  32 valid /  32    
+
+all 192 checks deterministic; rank = 190
+[hexagonmod2] cell 22 ok (351s)
+st6: n_cycles=4, total_t=24, n_qubits=2304, nmeas=2304
+[hexagonmod2] cell 24 ok (7s)
+x: same-x {1: 'green', 2: 'blue', 0: 'red'}  k->k+1 {0: 'blue', 2: 'green', 1: 'red'}
+y: same-y {0: 'green', 1: 'blue', 2: 'red'}  k->k+1 {1: 'green', 2: 'blue', 0: 'red'}
+same-x colour == vertex class, residue by residue: OK
+red's own residue: x -> p0 = 0, y -> p0 = 2
+[hexagonmod2] cell 26 ok (0s)
+       Timelike X (  timelike)  weight   144
+       Timelike Z (  timelike)  weight   144
+       Vertical Z (  marching)  weight   144
+     Horizontal Z (  marching)  weight   144
+       Vertical X (stationary)  weight   128
+     Horizontal X (stationary)  weight   128
+[hexagonmod2] cell 28 ok (0s)
+[hexagonmod2] cell 37 ok (0s)
+H-fusion:  slot XX reads ZZ   slot ZZ reads XX
+
+what a fusion's slots read, by step kind and edge kind:
+   step     edge | layer H H-fusion | slot XX reads
+     XX crossing |      --      yes | ZZ
+     XX internal |     yes       -- | ZZ
+     ZZ crossing |      --       -- | XX
+     ZZ internal |     yes      yes | XX
+=> exchanged on every XX-step fusion, on no ZZ-step fusion, whatever the edge kind
+
+(step kind, net Hadamard on the fusion) -> count: {('XX', True): 288, ('ZZ', False): 288}
+net Hadamard on every XX-step fusion and on no ZZ-step fusion: OK
+[hexagonmod2] cell 41 ok (0s)
+CHECK_SPEC_H  (each cell: internal / crossing slot)
+    blue X: t=0 red XX/XX   t=1 green XX/XX   t=3 red XX/XX   t=4 green XX/XX
+    blue Z: t=3 red ZZ/ZZ   t=4 green ZZ/ZZ   t=6 red ZZ/ZZ   t=7 green ZZ/ZZ
+     red X: t=4 green XX/XX   t=5 blue XX/XX   t=7 green XX/XX   t=8 blue XX/XX
+     red Z: t=1 green ZZ/ZZ   t=2 blue ZZ/ZZ   t=4 green ZZ/ZZ   t=5 blue ZZ/ZZ
+   green X: t=2 blue XX/XX   t=3 red XX/XX   t=5 blue XX/XX   t=6 red XX/XX
+   green Z: t=5 blue ZZ/ZZ   t=6 red ZZ/ZZ   t=8 blue ZZ/ZZ   t=9 red ZZ/ZZ
+
+H-fused fusions: 288 of 576
+CHECK_SPEC_H rows == CHECK_SPEC rows with the H-fused records exchanged: True
+[hexagonmod2] cell 43 ok (4s)
+  [   §4 plain Lx=12: nmeas=2304 detectors=384 edges=2304  (13s)]
+     §4 plain: noiseless reference sample all-zero: True
+  [§8 H-fusion Lx=12: nmeas=2304 detectors=384 edges=2304  (14s)]
+  §8 H-fusion: noiseless reference sample all-zero: True
+[hexagonmod2] cell 49 ok (37s)
+parallel decode == single-process decode:  erasure True   batch True
+[hexagonmod2] cell 50 ok (2s)
+XX slot = even record index, ZZ slot = the next one: OK
+     §4 plain: predictions differ on 247/2000 shots, matching weight differs on 0
+  §8 H-fusion: predictions differ on 276/2000 shots, matching weight differs on 0
+bias-aware matcher at uniform weights == §9 matcher up to equal-weight ties: OK
+[hexagonmod2] cell 56 ok (6s)
+[hexagonmod2] cell 65 ok (0s)
+[hexagonmod2] cell 70 ok (0s)
+  [   §4 plain Lx=18: nmeas=7776 detectors=1296 edges=7776  (45s)]
+  [   §4 plain Lx=24: nmeas=18432 detectors=3072 edges=18432  (74s)]
+[hexagonmod2] meas δ=0.0625: 12x18 1.551% (two-pass)  18x24 1.526% (two-pass)  (263s)
+[hexagonmod2] meas δ=0.1875: 12x18 1.201% (two-pass)  18x24 1.202% (two-pass)  (134s)
+[hexagonmod2] meas δ=0.3125: 12x18 1.076% (two-pass)  18x24 1.070% (two-pass)  (150s)
+[hexagonmod2] meas δ=0.4375: 12x18 1.036% (two-pass)  18x24 1.005% (two-pass)  (154s)
+[hexagonmod2] meas δ=0.5625: 12x18 1.025% (two-pass)  18x24 1.015% (two-pass)  (156s)
+[hexagonmod2] meas δ=0.6875: 12x18 1.034% (two-pass)  18x24 1.052% (two-pass)  (159s)
+[hexagonmod2] meas δ=0.8125: 12x18 1.129% (two-pass)  18x24 1.106% (two-pass)  (157s)
+[hexagonmod2] meas δ=0.9375: 12x18 1.302% (two-pass)  18x24 1.272% (two-pass)  (187s)
+[hexagonmod2] erasure δ=0.1250: 12x18 12.994% (two-pass)  18x24 12.718% (two-pass)  (889s)
+[hexagonmod2] erasure δ=0.3750: 12x18 6.259% (two-pass)  18x24 11.869% (fallback)  (2259s)
+[hexagonmod2] erasure δ=0.6250: 12x18 11.799% (two-pass)  18x24 11.840% (two-pass)  (329s)
+[hexagonmod2] erasure δ=0.8750: 12x18 12.084% (two-pass)  18x24 12.005% (two-pass)  (329s)
+[hexagonmod2] done

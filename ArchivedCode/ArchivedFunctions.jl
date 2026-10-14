@@ -1,3 +1,4 @@
+# NOTE: drho, cash_karppe, create_MPO etc. here are older versions, not those in src/MPOFuncs.jl (see git history, e.g. commit 878d86c).
 ####################################################################################
 #State definition
 

@@ -26,7 +26,7 @@ max_cavs = 15
 for no_cavs in 2:max_cavs
 
     println("No cavs ",  no_cavs)
-    mpo, sites , eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
+    mpo, sites , eigenvals = MPOFuncs.capture_photon(no_cavs, dep, gamma, dt, t_final)
     truncate!(mpo; cutoff=1e-10)
     link_dim_vec = ITensors.linkdims(mpo)
     push!(avg_bond_dim, sum(link_dim_vec)/no_cavs)

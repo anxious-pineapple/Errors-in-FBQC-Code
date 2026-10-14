@@ -1,3 +1,4 @@
+# NOTE: uses cash_karppe_evolve_test from an older version of src/MPOFuncs.jl (now capture_photon; old version in commit 878d86c).
 #
 # In this code im making a bell state in dual rail encoding
 # However since all the cavities are in the same MPO, this becomes increasingly data intensive 

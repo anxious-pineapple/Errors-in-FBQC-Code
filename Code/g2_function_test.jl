@@ -32,7 +32,9 @@ for i=1:t_size-1
     rhot = ρt_master[i]
     corel_m[i,i:end] = timecorrelations.correlation(t_list[1:(t_size-i+1)], rhot, H, J, at, a)
 end
-corel_m[t_size,t_size] = 0.0
+# the loop never reaches the last diagonal entry: it is ⟨σ₊σ₋⟩(t_fin), the population left in the emitter
+# (setting it to 0 made the matrix non-positive, giving one spurious negative eigenvalue ~ -population·dt/3)
+corel_m[t_size,t_size] = real(expect(at*a, ρt_master[end]))
 # Row i holds ⟨σ₊(tⱼ)σ₋(tᵢ)⟩ for j ≥ i. Since ⟨σ₊(s)σ₋(t)⟩* = ⟨σ₊(t)σ₋(s)⟩ the lower triangle is the adjoint
 corel_m = corel_m + corel_m' - Diagonal(diag(corel_m))
 
@@ -70,6 +72,8 @@ sw = sqrt.(quad_weights(t_size, dt))
 # eigenvalues are the photon numbers nᵢ (Σnᵢ ≈ 1), columns of eigens the mode functions vᵢ(t) (arbitrary phase)
 eigenvals, eigens = eigen(Hermitian(sw .* corel_m .* sw'); sortby=-)
 eigens ./= sw
+# photon numbers are ≥ 0; any remaining negatives are solver noise (~1e-8), so set them to 0
+eigenvals = max.(eigenvals, 0.0)
 
 eigenvals_trunc = eigenvals[1:100]/sum(eigenvals[1:100])
 S = sum([-i*log(i) for i in eigenvals_trunc])

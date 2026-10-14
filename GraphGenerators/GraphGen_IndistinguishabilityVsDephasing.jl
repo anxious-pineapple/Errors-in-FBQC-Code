@@ -27,7 +27,7 @@ for no_cavs in no_cavs_list
     for dep in dep_list
         println(dep)
         # ti = now()
-        mpo, sites = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
+        mpo, sites = MPOFuncs.capture_photon(no_cavs, dep, gamma, dt, t_final)
         double2, double_sites2 = MPOFuncs.n_copy_mpo(mpo, sites, 2)
         for i=no_cavs:-1:1
             print(i, " , ")

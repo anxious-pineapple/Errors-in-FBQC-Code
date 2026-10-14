@@ -17,7 +17,7 @@ t_final = 10.0
 dep = 0.002
 
 
-mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
+mpo_i, sites_i, eigenvals = MPOFuncs.capture_photon(no_cavs, dep, gamma, dt, t_final)
 # signal_mpo, signal_sites = MPOFuncs.n_copy_mpo(mpo_i, sites_i, 4)
 
 ancilla_site_i = siteinds("Qudit", no_cavs, dim=3)

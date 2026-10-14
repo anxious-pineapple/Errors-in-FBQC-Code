@@ -375,7 +375,7 @@ dep_list = [0:0.0025:0.02;]
 
 for dep in dep_list
     println("dep is  ",dep)
-    mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
+    mpo_i, sites_i, eigenvals = MPOFuncs.capture_photon(no_cavs, dep, gamma, dt, t_final)
     
     #dont take no_cavs into account in visibility cause this is what the visibility of the state would be
     # and then fidelity is not exact, constrained by numerical methods

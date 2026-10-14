@@ -406,7 +406,7 @@ function stabalizer_gen(site_array)
 end
 
 
-# mpo_i, sites_i, eigenvals = MPOFuncs.cash_karppe_evolve_test(no_cavs, dep, gamma, dt, t_final)
+# mpo_i, sites_i, eigenvals = MPOFuncs.capture_photon(no_cavs, dep, gamma, dt, t_final)
 sites_i = ITensors.siteinds("Qudit", no_cavs; dim=4)
 input_list = repeat(["Ground",],no_cavs)
 input_list[1] = "Excite1" 

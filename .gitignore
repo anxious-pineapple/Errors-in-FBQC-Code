@@ -1,7 +1,6 @@
 .CondaPkg/
 .CondaPkg
 
-Manifest.toml
 Data/peps_dep0no_cavs10part_1.jld2
 Data/peps_dep0no_cavs10part_2.jld2
 Data/peps_dep0no_cavs10part_3.jld2
@@ -184,6 +183,4 @@ SignificantCorrelation_N12.csv
 SignificantCorrelation_N13.csv
 SignificantCorrelation_N15.csv
 fusion_ideal.pdf
-Manifest.toml
 Project.toml
-Manifest.toml

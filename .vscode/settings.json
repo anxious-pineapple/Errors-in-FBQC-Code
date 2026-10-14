@@ -1,5 +1,6 @@
 {
     "python.analysis.typeCheckingMode": "basic",
     "python.analysis.autoImportCompletions": true,
-    "python-envs.defaultEnvManager": "ms-python.python:system"
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "julia.executablePath": "/Users/yuktee/.julia/juliaup/julia-1.10.4+0.aarch64.apple.darwin14/Julia-1.10.app/Contents/Resources/julia/bin/julia"
 }

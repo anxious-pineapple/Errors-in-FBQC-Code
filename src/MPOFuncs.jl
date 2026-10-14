@@ -24,7 +24,8 @@ Pipeline: g2 -> gᵢ(t) couplings  ->  drho gives dρ/dt  ->  cash_karppe takes 
 3. Time stepping
    CK_a, CK_b, CK_c, CK_cꜛ, k_gen   Cash-Karp tableau and the six stages.
    cash_karppe             Accept/reject step: accept if error ≤ tol, else retry smaller (6 RHS calls per
-                           accepted step). Returns (ρ_new, dt_taken, dt_next).                      IN USE
+                           accepted step), floored at min_dt (accepted regardless of error once dt ≤ min_dt).
+                           Returns (ρ_new, dt_taken, dt_next).                                      IN USE
 
 4. Full evolution (emitter excited -> photon state in the virtual cavities)
    capture_photon            drho, g2 on dt/5 grid. Returns (mpo, sites, eigenvals).  IN USE BY EVERY SCRIPT
@@ -33,6 +34,9 @@ Pipeline: g2 -> gᵢ(t) couplings  ->  drho gives dρ/dt  ->  cash_karppe takes 
                                cutoff=1e-12        truncate! ρ each step (nothing = never); ~5x faster than
                                                    never at 4 cavities, result changes ~1e-4
                                dt_start=1e-5       first step size tried (small, so the first step isn't rejected)
+                               min_dt=1e-12        floor passed to cash_karppe; raise (e.g. 1e-4) to stop the
+                                                   near-t=0 1/√t divergence from shrinking steps indefinitely,
+                                                   trading accuracy there for speed. Does not affect g2.
 
 5. Progress display
    print_progress          One-line bar redrawn in place: t/t_final, dt, χ, elapsed, ETA.
@@ -698,20 +702,24 @@ end
 # Adaptive Cash-Karp step with accept/reject: the step is accepted only if its error estimate ‖ρ₅ - ρ₄‖ (5th- minus
 # embedded 4th-order result) is ≤ tol, otherwise it is retried with a smaller dt. 6 RHS calls per accepted step.
 # The next step is proposed as dt·0.9·(tol/err)^(1/5), limited to 5x growth and max_dt.
+# min_dt: once a retry would shrink dt to min_dt or below, the step is accepted at min_dt regardless of err
+# instead of retrying further (and instead of erroring). Near t = 0 the couplings diverge as 1/√t, so without
+# a floor the retry loop can keep shrinking dt to ~1e-5 or smaller chasing tol; raising min_dt trades some
+# accuracy there for speed. Default 1e-12 reproduces the old behaviour (effectively no floor).
 # Returns (ρ_new, dt_taken, dt_next).
 # (Replaced the earlier version, which estimated the error at dt, then always recomputed the step at the new dt
 #  without checking it: 12 RHS calls per step. ~2x slower for the same accuracy.)
-function cash_karppe(sys, d_rho, t, dt; tol=1e-4, p_=nothing, max_dt=Inf, safety=0.9)
+function cash_karppe(sys, d_rho, t, dt; tol=1e-4, p_=nothing, max_dt=Inf, safety=0.9, min_dt=1e-12)
     wsum(w, ks) = sum(w[i] * ks[i] for i in eachindex(w) if w[i] != 0)
+    dt = max(dt, min_dt)
     while true
         k_s = k_gen(sys, d_rho, t, dt, CK_a, CK_b, p=p_)
         err = norm(wsum(CK_cꜛ .- CK_c, k_s))
-        if err <= tol
-            dt_next = min(dt * min(5.0, safety * (tol/err)^0.2), max_dt)
+        if err <= tol || dt <= min_dt
+            dt_next = min(dt * min(5.0, safety * (tol/max(err, eps(tol)))^0.2), max_dt)
             return sys + wsum(CK_c, k_s), dt, dt_next
         end
-        dt *= max(0.1, safety * (tol/err)^0.25)
-        dt < 1e-12 && error("cash_karppe: step size underflow at t = $t (error $err > tol $tol)")
+        dt = max(dt * max(0.1, safety * (tol/err)^0.25), min_dt)
     end
 end
 
@@ -723,7 +731,7 @@ end
 # rejected a few times (2-3 retries of 6 RHS calls); a small start avoids that, and the step can grow 5x per step.
 
 function capture_photon(no_cavs, depha, gamma, dt, t_final; progress=true, progress_every=1.0, cutoff=1e-12,
-                        dt_start=1e-5)
+                        dt_start=1e-5, min_dt=1e-12)
     g_f, eigenvals = g2(gamma, depha, t_final, dt/5, no_cavs)
 
     sys_sites = siteinds("Qudit", no_cavs+1, dim=3)
@@ -740,7 +748,7 @@ function capture_photon(no_cavs, depha, gamma, dt, t_final; progress=true, progr
     h = dt_start      # proposed size of the next step
 
     while t<t_final
-        sys_, dt_, h = cash_karppe(sys, drho, t, min(h, t_final - t); tol=1E-4, p_=p_, max_dt=dt*10)
+        sys_, dt_, h = cash_karppe(sys, drho, t, min(h, t_final - t); tol=1E-4, p_=p_, max_dt=dt*10, min_dt=min_dt)
         t += dt_
         sys = sys_/trace(sys_, sys_sites)
         isnothing(cutoff) || truncate!(sys; cutoff=cutoff)

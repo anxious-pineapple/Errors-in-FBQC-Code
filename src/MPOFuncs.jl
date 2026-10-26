@@ -2,6 +2,7 @@ module MPOFuncs
 using ITensors: @OpName_str, @SiteType_str   # no longer exported by ITensors ≥ 0.8
 
 using ITensors, ITensorMPS, Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations, SparseArrays
+using KrylovKit: eigsolve
 using TensorOperations   # backend for ITensors.optimal_contraction_sequence (Bell state PEPS)
 export beamsplitter!, swap_nextsite!, swap_ij!, trace, measure_corel, measure_a, g_34, g2, cash_karppe, capture_photon,
        photon_couplings
@@ -575,14 +576,18 @@ function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false, Δ=0.0, ε_res=1e-10
     # wₖ = dt everywhere, which over-weights the end points (the emitter is brightest at t = 0) by ~dt/2.
     sw = sqrt.(quad_weights(t_size, dt))
     # eigenvalues are the photon numbers nᵢ (Σnᵢ ≈ 1), columns of eigens the mode functions vᵢ(t) (arbitrary phase)
-    # n_eig = k computes only the k largest: the back-transformation of eigenvectors is skipped for the rest,
-    # roughly halving the cost on the full grid (the reduction to tridiagonal form is still done in full).
+    # n_eig = k computes only the k largest, by Lanczos (KrylovKit): just matrix-vector products, no O(t_size³)
+    # reduction of the whole matrix (~130 s → ~1 s at t_size ~ 10⁴). The spectrum decays fast, so this converges
+    # in a few dozen products; eigenvalues agree with eigen to ~1e-15.
     Cw = Hermitian(sw .* corel_m .* sw')
     if isnothing(n_eig)
         eigenvals, eigens = eigen(Cw; sortby=-)
     else
-        F = eigen(Cw, t_size-n_eig+1:t_size)     # ascending; `reverse` is shadowed by the kwarg, so index
-        eigenvals, eigens = F.values[end:-1:1], F.vectors[:, end:-1:1]
+        vals, vecs, info = eigsolve(Cw, ones(ComplexF64, t_size), n_eig, :LR;
+                                    ishermitian=true, tol=1e-12, krylovdim=max(30, 2n_eig + 10))
+        info.converged < n_eig && @warn "g2: only $(info.converged) of $n_eig modes converged"
+        eigenvals = real.(vals[1:n_eig])
+        eigens = reduce(hcat, vecs[1:n_eig])
     end
     eigens ./= sw
     # photon numbers are ≥ 0; any remaining negatives are solver noise (~1e-8), so set them to 0

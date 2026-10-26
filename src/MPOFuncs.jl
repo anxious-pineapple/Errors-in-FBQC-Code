@@ -2,7 +2,8 @@ module MPOFuncs
 using ITensors: @OpName_str, @SiteType_str   # no longer exported by ITensors ≥ 0.8
 
 using ITensors, ITensorMPS, Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations, SparseArrays
-export beamsplitter!, swap_nextsite!, swap_ij!, trace, measure_corel, measure_a, g_34, g2, cash_karppe, capture_photon
+export beamsplitter!, swap_nextsite!, swap_ij!, trace, measure_corel, measure_a, g_34, g2, cash_karppe, capture_photon,
+       photon_couplings
 # export ITensors, beamsplitter!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
 
 #= ===================================== EVOLUTION FUNCTIONS: OVERVIEW =====================================
@@ -11,15 +12,17 @@ Pipeline: g2 -> gᵢ(t) couplings  ->  drho gives dρ/dt  ->  cash_karppe takes 
 
 1. Couplings to the virtual cavities
    g2                      Emitter correlation ⟨σ₊(t)σ₋(t')⟩ (QuantumOptics) -> eigenmodes vᵢ(t) -> closed-form
-                           cavity couplings gᵢ(t). Returns (gv_f, eigenvals).                       IN USE
-   cumul_int, quad_weights 4th-order running integral + matching quadrature weights (modes orthonormal
+              quad_weig              cavity couplings gᵢ(t). Returns (gv_f, eigenvals).                       IN USE
+   cumul_int,hts 4th-order running integral + matching quadrature weights (modes orthonormal
                            under the same integral). Helpers for g2.                                IN USE
    g2 (old, ODE-based)     Previous version incl. a_, vᵢⁱ⁻¹.                                         COMMENTED OUT
 
 2. Right-hand side dρ/dt   (all: dephasing D[√κ σz] with κ = deph/2, same as g2)
    drho                    Non-Hermitian form Kρ + ρK† + L₀ρL₀† + κσzρσz, K written out by hand.     IN USE
-     pre_term, post_term,  Build K, K†, L₀/L₀† as MPOs. Emitter term is "A",1,"Adag",1 = c c† (not c†c):
-     Lo                    adds -γρ, which the per-step renormalisation removes.                    IN USE
+     pre_term, post_term,  Build K, K†, L₀/L₀† as MPOs from an OpSum. Emitter term is "A",1,"Adag",1 = c c†
+     Lo                    (not c†c): adds -γρ, which the per-step renormalisation removes.  REFERENCE FORM
+   operator_builder        Same K, K†, L₀, L₀† written directly as bond-dim 3 / 2 MPOs, built once per run and
+                           called as ops(t) by drho (matches the OpSum versions to ~1e-16).          IN USE
 
 3. Time stepping
    CK_a, CK_b, CK_c, CK_cꜛ, k_gen   Cash-Karp tableau and the six stages.
@@ -28,15 +31,21 @@ Pipeline: g2 -> gᵢ(t) couplings  ->  drho gives dρ/dt  ->  cash_karppe takes 
                            Returns (ρ_new, dt_taken, dt_next).                                      IN USE
 
 4. Full evolution (emitter excited -> photon state in the virtual cavities)
-   capture_photon            drho, g2 on dt/5 grid. Returns (mpo, sites, eigenvals).  IN USE BY EVERY SCRIPT
+   capture_photon            drho, g2 on dt/5 grid. Returns (mpo, sites, eigenvals), eigenvals = the no_cavs
+                             largest only (call g2 directly for the full spectrum).    IN USE BY EVERY SCRIPT
                              Steps with cash_karppe (tol 1e-4, max step 10·dt), ends exactly at t_final. kwargs:
                                progress=true, progress_every=1.0   progress bar
-                               cutoff=1e-12        truncate! ρ each step (nothing = never); ~5x faster than
-                                                   never at 4 cavities, result changes ~1e-4
+                               cutoff=1e-12        truncate! ρ each step (nothing = never), also used for every
+                                                   truncation inside drho (1e-12 there if nothing); ~5x faster
+                                                   than never at 4 cavities, result changes ~1e-4
                                dt_start=1e-5       first step size tried (small, so the first step isn't rejected)
+                               t_stop=t_final      evolve only to t_stop (g2 still uses t_final), for profiling
+                               couplings=nothing   precomputed photon_couplings(...) to skip g2 (reuse across runs)
                                min_dt=1e-12        floor passed to cash_karppe; raise (e.g. 1e-4) to stop the
                                                    near-t=0 1/√t divergence from shrinking steps indefinitely,
                                                    trading accuracy there for speed. Does not affect g2.
+                               tol=1e-4            cash_karppe's per-step error tolerance
+   photon_couplings          the g2 call capture_photon makes; compute once per dephasing, pass as couplings=
 
 5. Progress display
    print_progress          One-line bar redrawn in place: t/t_final, dt, χ, elapsed, ETA.
@@ -525,7 +534,8 @@ end
 #   deph: pure dephasing rate of the emitter coherence (jump operator √(deph/2) σz, matching drho).
 #   Δ:    emitter detuning. Δ ≠ 0 also needs a Δ·c†c term in drho's Hamiltonian (not implemented there).
 #   ε_res: mode j is only resolved once it has carried ε_res of its photon (see comments below).
-function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false, Δ=0.0, ε_res=1e-10)
+#   n_eig: compute only the n_eig largest eigenvalues/modes (≥ no_cavs); nothing = all of them.
+function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false, Δ=0.0, ε_res=1e-10, n_eig=nothing)
 
     basis = SpinBasis(1//2)
     a = sigmam(basis)
@@ -557,7 +567,15 @@ function g2(gamma, deph, t_fin, dt, no_cavs; reverse=false, Δ=0.0, ε_res=1e-10
     # wₖ = dt everywhere, which over-weights the end points (the emitter is brightest at t = 0) by ~dt/2.
     sw = sqrt.(quad_weights(t_size, dt))
     # eigenvalues are the photon numbers nᵢ (Σnᵢ ≈ 1), columns of eigens the mode functions vᵢ(t) (arbitrary phase)
-    eigenvals, eigens = eigen(Hermitian(sw .* corel_m .* sw'); sortby=-)
+    # n_eig = k computes only the k largest: the back-transformation of eigenvectors is skipped for the rest,
+    # roughly halving the cost on the full grid (the reduction to tridiagonal form is still done in full).
+    Cw = Hermitian(sw .* corel_m .* sw')
+    if isnothing(n_eig)
+        eigenvals, eigens = eigen(Cw; sortby=-)
+    else
+        F = eigen(Cw, t_size-n_eig+1:t_size)     # ascending; `reverse` is shadowed by the kwarg, so index
+        eigenvals, eigens = F.values[end:-1:1], F.vectors[:, end:-1:1]
+    end
     eigens ./= sw
     # photon numbers are ≥ 0; any remaining negatives are solver noise (~1e-8), so set them to 0
     eigenvals = max.(eigenvals, 0.0)
@@ -601,6 +619,7 @@ end
 # pre = K = -iH - ½L₀†L₀ - ½κ and post = K†, so dρ/dt = Kρ + ρK† + L₀ρL₀† + κσzρσz. For the cascade
 #   K = -½[γc†c + Σᵢ|gᵢ|²aᵢ†aᵢ + 2√γ Σᵢ gᵢ* aᵢ†c + 2 Σ_{i>j} gᵢ* gⱼ aᵢ†aⱼ + κ]
 # (g is complex, so the coefficients of raising operators aᵢ† carry gᵢ*)
+# drho uses operator_builder below instead; these OpSum versions are the readable definition it must match.
 function pre_term(sites, g_f, rg, dep, t)
     no_cavs = length(sites) - 1
     pre = OpSum()
@@ -645,36 +664,92 @@ function Lo(sites, g_f, rg, t)
     return L_0, L_0d
 end
 
+# Same operators as pre_term, post_term and Lo, but written directly as MPOs with the couplings at t filled in,
+# instead of converting an OpSum (which also SVD-compresses) on every drho call. Every two-site term of K has a
+# coefficient that factorises into (left factor)·(right factor): √γ c or gⱼ aⱼ on the left, 2gᵢ* aᵢ† on the right.
+# So K is exactly a bond-dimension-3 MPO, reading left to right: state 1 = nothing placed yet, 2 = annihilator
+# placed, 3 = done (one-site terms go straight 1 -> 3). L₀ = √γ c + Σ gᵢaᵢ is the same with states 1, 2 only.
+# post = K† since post_term is the adjoint of pre_term term by term.
+# Returns ops(t) -> (pre, post, L_0, L_0d).
+function operator_builder(sites, g_f, rg, κ)
+    n = length(sites)
+    mat(name, s) = array(op(name, s), s', s)
+    Id = [mat("I", s) for s in sites]
+    A = [mat("A", s) for s in sites]
+    Ad = [mat("Adag", s) for s in sites]
+    AAd = A[1] * Ad[1]                      # "A",1,"Adag",1 in pre_term: c c†, not c†c
+    lK = [Index(3, "Link,l=$k") for k in 1:n-1]
+    lL = [Index(2, "Link,l=$k") for k in 1:n-1]
+
+    # W[a, b, :, :] is the local operator for the transition a -> b; the end sites keep row 1 / column `last`
+    function to_mpo(Ws, links, last)
+        T = Vector{ITensor}(undef, n)
+        T[1] = ITensor(Ws[1][1, :, :, :], links[1], sites[1]', sites[1])
+        for k in 2:n-1
+            T[k] = ITensor(Ws[k], links[k-1], links[k], sites[k]', sites[k])
+        end
+        T[n] = ITensor(Ws[n][:, last, :, :], links[n-1], sites[n]', sites[n])
+        return MPO(T)
+    end
+
+    function ops(t)
+        g = [g_f[i](t) for i in 1:n-1]
+        WK = Vector{Array{ComplexF64,4}}(undef, n)
+        WL = Vector{Array{ComplexF64,4}}(undef, n)
+        for k in 1:n
+            d = size(Id[k], 1)
+            W = zeros(ComplexF64, 3, 3, d, d)
+            V = zeros(ComplexF64, 2, 2, d, d)
+            for a in 1:3
+                W[a, a, :, :] = Id[k]
+            end
+            V[1, 1, :, :] = V[2, 2, :, :] = Id[k]
+            if k == 1
+                W[1, 2, :, :] = rg * A[1]
+                W[1, 3, :, :] = rg^2 * AAd + κ * Id[1]
+                V[1, 2, :, :] = rg * A[1]
+            else
+                gk = g[k-1]
+                W[1, 2, :, :] = gk * A[k]
+                W[2, 3, :, :] = 2 * conj(gk) * Ad[k]
+                W[1, 3, :, :] = abs2(gk) * (Ad[k] * A[k])
+                V[1, 2, :, :] = gk * A[k]
+            end
+            WK[k], WL[k] = W, V
+        end
+        pre = -0.5 * to_mpo(WK, lK, 3)
+        L_0 = to_mpo(WL, lL, 2)
+        return pre, swapprime(conj(pre), 1, 0), L_0, swapprime(conj(L_0), 1, 0)
+    end
+    return ops
+end
+
 #func calc drho/dt
 function drho(rho, p, t)
     #drho(sites, rho, t)
     #(H_int * rho) + (rho * H_int) + sum(Ld rho L)
-    sites, gv_f, rg, deph = p
-    cut_off=1E-12
+    # ops = operator_builder(sites, gv_f, rg, deph/2), made once in capture_photon
+    sites, ops, _, deph, cut_off = p
     algo="naive"
-    no_cavs = length(sites) - 1
     κ = deph / 2    # dephasing D[√κ σz]: the emitter coherence dephases at rate deph (same as g2)
 
-    pre = pre_term(sites, gv_f, rg, κ, t)
-    post = post_term(sites, gv_f, rg, κ, t)
-    L_0, L_0d = Lo(sites, gv_f, rg, t)
+    pre, post, L_0, L_0d = ops(t)
 
     pre_rho = apply(pre, rho; alg=algo, cutoff=cut_off)
     post_rho = apply(rho, post; alg=algo, cutoff=cut_off)
 
-    drho_ = pre_rho + post_rho
     # L₀ρL₀† as one exact product, truncated once at the end, so the result stays Hermitian
-    drho_ += apply(apply(L_0 , rho; alg=algo, truncate=false), L_0d; alg=algo, cutoff=cut_off)
+    terms = [pre_rho, post_rho, apply(apply(L_0 , rho; alg=algo, truncate=false), L_0d; alg=algo, cutoff=cut_off)]
 
     if deph!= 0
         L_1 = op("Sz",sites[1])
-        drho_ += κ*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0))
+        push!(terms, κ*conj(swapprime( apply( L_1, swapprime(conj(apply(L_1, rho; cutoff=cut_off)), 1,0) ; cutoff=cut_off), 1,0)))
     end
 
-    # the sum of the terms has ~2-3x the bond dimension of ρ (MPO + only truncates at 1e-15), which makes every stage
-    # sum in cash_karppe as expensive as a drho call; truncating here halves it (4 cavities: 17 -> 9, change ~1e-6)
-    truncate!(drho_; cutoff=cut_off)
-    return drho_
+    # the sum of the terms has ~2-3x the bond dimension of ρ, which would make every stage sum in cash_karppe as
+    # expensive as a drho call. Plain `+` only compresses at 1e-15, so add all terms in one call truncated at cut_off
+    # (this replaces the earlier pairwise `+` followed by truncate!, which halved it: 4 cavities 17 -> 9).
+    return +(terms...; cutoff=cut_off)
 end
 
 # Cash-Karp tableau: nodes a, stage weights b, 5th-order weights c, embedded 4th-order weights cꜛ
@@ -685,13 +760,19 @@ const CK_c = [37/378, 0, 250/621, 125/594, 0, 512/1771]
 const CK_cꜛ = [2825/27648, 0, 18575/48384, 13525/55296, 277/14336, 1/4]
 
 # the six Cash-Karp stages kᵢ = dt·dρ/dt(ρ + Σⱼ bᵢⱼkⱼ, t + aᵢdt)
+# The stage state ρ + Σⱼ bᵢⱼkⱼ is added in one call truncated at drho's cutoff: plain `+`/`sum` compress only at
+# 1e-15, so the next drho would act on an MPO with roughly the summed bond dimension of all the pieces.
+# (Also truncating each kᵢ to ρ's precision, absolute cutoff cutoff·‖ρ‖², was tried: it shrank the k's but didn't
+#  speed up tol 1e-6 / cutoff 1e-11, and with tol below √cutoff its dt-independent noise caused thousands of
+#  rejected steps. Reverted.)
 function k_gen(sys, d_rho, t, dt, a, b ; p=nothing)
-    # p = (sites, gv_f, rg, deph)
+    # p = (sites, gv_f, rg, deph, cutoff)
+    cut_off = p[5]
     k_list = [ ; ]
     kₙ = dt *  d_rho(sys, p, t)
     push!( k_list, kₙ)
     for i=2:6
-        sys⁻ = sys + sum(k_list .* b[i])
+        sys⁻ = +(sys, (k_list .* b[i])...; cutoff=cut_off)
         t⁻ = t + a[i]*dt
         kₙ = dt *  d_rho(sys⁻, p, t⁻)
         push!( k_list, kₙ)
@@ -709,15 +790,18 @@ end
 # Returns (ρ_new, dt_taken, dt_next).
 # (Replaced the earlier version, which estimated the error at dt, then always recomputed the step at the new dt
 #  without checking it: 12 RHS calls per step. ~2x slower for the same accuracy.)
+# The weighted sums are added in one call each, truncated at drho's cutoff (p_[5]). The cutoff is relative to the
+# sum's own norm, so it changes the error estimate ‖ρ₅ - ρ₄‖ only at that relative level.
 function cash_karppe(sys, d_rho, t, dt; tol=1e-4, p_=nothing, max_dt=Inf, safety=0.9, min_dt=1e-12)
-    wsum(w, ks) = sum(w[i] * ks[i] for i in eachindex(w) if w[i] != 0)
+    cut_off = p_[5]
+    weighted(w, ks) = [w[i] * ks[i] for i in eachindex(w) if w[i] != 0]
     dt = max(dt, min_dt)
     while true
         k_s = k_gen(sys, d_rho, t, dt, CK_a, CK_b, p=p_)
-        err = norm(wsum(CK_cꜛ .- CK_c, k_s))
+        err = norm(+(weighted(CK_cꜛ .- CK_c, k_s)...; cutoff=cut_off))
         if err <= tol || dt <= min_dt
             dt_next = min(dt * min(5.0, safety * (tol/max(err, eps(tol)))^0.2), max_dt)
-            return sys + wsum(CK_c, k_s), dt, dt_next
+            return +(sys, weighted(CK_c, k_s)...; cutoff=cut_off), dt, dt_next
         end
         dt = max(dt * max(0.1, safety * (tol/err)^0.25), min_dt)
     end
@@ -729,10 +813,16 @@ end
 # Steps with the accept/reject cash_karppe (tol 1e-4, max step 10·dt) and lands exactly on t_final.
 # dt_start: size of the first step tried. The couplings diverge as 1/√t near t = 0, so a first try of dt gets
 # rejected a few times (2-3 retries of 6 RHS calls); a small start avoids that, and the step can grow 5x per step.
+# t_stop: stop the evolution early (couplings are still built for the full t_final window), e.g. for profiling.
+# couplings: output of photon_couplings with the same (no_cavs, depha, gamma, dt, t_final), to reuse it across
+# runs that differ only in evolver settings (min_dt, cutoff, ...); nothing = compute it here.
+
+# The g2 call capture_photon uses: dt/5 grid, the no_cavs largest modes. Returns (g_f, eigenvals).
+photon_couplings(no_cavs, depha, gamma, dt, t_final) = g2(gamma, depha, t_final, dt/5, no_cavs; n_eig=no_cavs)
 
 function capture_photon(no_cavs, depha, gamma, dt, t_final; progress=true, progress_every=1.0, cutoff=1e-12,
-                        dt_start=1e-5, min_dt=1e-12)
-    g_f, eigenvals = g2(gamma, depha, t_final, dt/5, no_cavs)
+                        dt_start=1e-5, min_dt=1e-12, t_stop=t_final, couplings=nothing, tol=1e-4)
+    g_f, eigenvals = isnothing(couplings) ? photon_couplings(no_cavs, depha, gamma, dt, t_final) : couplings
 
     sys_sites = siteinds("Qudit", no_cavs+1, dim=3)
     input_list = repeat(["Ground",],no_cavs+1)
@@ -744,18 +834,20 @@ function capture_photon(no_cavs, depha, gamma, dt, t_final; progress=true, progr
     # t_list = [t,]
     t_start = time()
     last_print = -Inf
-    p_ = (sys_sites, g_f, sqrt(gamma), depha)
+    # drho needs a numeric cutoff even when ρ itself is never truncated (cutoff = nothing)
+    ops = operator_builder(sys_sites, g_f, sqrt(gamma), depha/2)
+    p_ = (sys_sites, ops, sqrt(gamma), depha, something(cutoff, 1e-12))
     h = dt_start      # proposed size of the next step
 
-    while t<t_final
-        sys_, dt_, h = cash_karppe(sys, drho, t, min(h, t_final - t); tol=1E-4, p_=p_, max_dt=dt*10, min_dt=min_dt)
+    while t<t_stop
+        sys_, dt_, h = cash_karppe(sys, drho, t, min(h, t_stop - t); tol=tol, p_=p_, max_dt=dt*10, min_dt=min_dt)
         t += dt_
         sys = sys_/trace(sys_, sys_sites)
         isnothing(cutoff) || truncate!(sys; cutoff=cutoff)
 
         #progress bar
-        if progress && (time() - last_print >= progress_every || t >= t_final)
-            print_progress(t, t_final, dt_, maxlinkdim(sys), t_start)
+        if progress && (time() - last_print >= progress_every || t >= t_stop)
+            print_progress(t, t_stop, dt_, maxlinkdim(sys), t_start)
             last_print = time()
         end
     end

@@ -1,0 +1,22 @@
+
+==== 5 cavities, dephasing 0.001, t = 0 -> 20.0 ====
+g2 eigenvalues   [0.999, 0.0005438, 0.0001624, 7.726e-5, 4.505e-5]
+'noise ×': when a rejected step is retried smaller, how much less the error estimate shrank than (dt ratio)^5
+           (median over retries; ≈1 = real step error, ≫1 = truncation noise)
+
+tol1e-4 cut1e-9  |   18.0 s  steps   245  rejected    3  noise × 0.28
+                 | ρ bond dim at t = 0.01, 0.1, 1, 5, 20: [4, 4, 6, 4, 4]  max 6   stage k's max 9
+                 | s/step 0.071   attempts with t < 1: 58 (6.7 s)   accepted err/tol median 0.0024   smallest dt 1.0e-5
+                 | n - eigenvalue = [-0.00091, -0.00046, -0.00017, -7.3e-5, -4.8e-5]
+tol1e-4 cut1e-11 |  107.7 s  steps   381  rejected   23  noise × 0.9
+                 | ρ bond dim at t = 0.01, 0.1, 1, 5, 20: [6, 5, 8, 8, 6]  max 9   stage k's max 17
+                 | s/step 0.27   attempts with t < 1: 209 (84.2 s)   accepted err/tol median 0.15   smallest dt 1.0e-5
+                 | n - eigenvalue = [-0.00016, -6.6e-5, -5.4e-5, -3.7e-5, -4.5e-5]
+tol1e-6 cut1e-9  |  899.6 s  steps  2528  rejected 2469  noise × 0.36
+                 | ρ bond dim at t = 0.01, 0.1, 1, 5, 20: [8, 8, 8, 8, 6]  max 8   stage k's max 8
+                 | s/step 0.18   attempts with t < 1: 4337 (825.1 s)   accepted err/tol median 0.18   smallest dt 4.8e-6
+                 | n - eigenvalue = [-0.0013, -0.0016, -0.003, -0.0036, -0.003]
+tol1e-6 cut1e-11 |   29.3 s  steps   308  rejected    4  noise × 0.67
+                 | ρ bond dim at t = 0.01, 0.1, 1, 5, 20: [4, 4, 8, 7, 6]  max 8   stage k's max 8
+                 | s/step 0.093   attempts with t < 1: 118 (12.0 s)   accepted err/tol median 0.063   smallest dt 1.0e-5
+                 | n - eigenvalue = [-0.00023, -5.9e-5, -5.1e-5, -7.3e-5, -3.0e-5]

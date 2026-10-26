@@ -2,6 +2,7 @@ module MPOFuncs
 using ITensors: @OpName_str, @SiteType_str   # no longer exported by ITensors ≥ 0.8
 
 using ITensors, ITensorMPS, Integrals, QuantumOptics, LinearAlgebra, Interpolations, DifferentialEquations, SparseArrays
+using TensorOperations   # backend for ITensors.optimal_contraction_sequence (Bell state PEPS)
 export beamsplitter!, swap_nextsite!, swap_ij!, trace, measure_corel, measure_a, g_34, g2, cash_karppe, capture_photon,
        photon_couplings
 # export ITensors, beamsplitter!, drho, trace, measure_corel, measure_a, g_34, g2, cash_karppe, cash_karppe_evolve
@@ -50,6 +51,13 @@ Pipeline: g2 -> gᵢ(t) couplings  ->  drho gives dρ/dt  ->  cash_karppe takes 
 5. Progress display
    print_progress          One-line bar redrawn in place: t/t_final, dt, χ, elapsed, ETA.
    fmt_secs                Seconds -> "42s" / "3m05s".
+
+6. Bell state generator (2 layer PEPS: 4 photon copies + ancillas, processed one cavity mode at a time)
+   bell_peps_init          4 copies of the photon, reordered by mode, zipped with a ground-state ancilla layer.
+   bell_peps_mode!         Beamsplitters + 1100 detection on one mode -> (signal tensors, ancilla block, comb).
+   peps_measure            Tr(meas ρ) from the per-mode pieces (meas = nothing: success probability).
+   ideal_bell, error_bell, op_gen, stabalizer_gen   Ideal/Pauli-errored Bell state and stabilisers as MPOs.
+   peps_zipper, beamsplitter_peps_tensor_linear!/nonlinear!, detect_1100_anymode   Helpers.
 ========================================================================================================== =#
 
 
@@ -816,6 +824,9 @@ end
 # t_stop: stop the evolution early (couplings are still built for the full t_final window), e.g. for profiling.
 # couplings: output of photon_couplings with the same (no_cavs, depha, gamma, dt, t_final), to reuse it across
 # runs that differ only in evolver settings (min_dt, cutoff, ...); nothing = compute it here.
+# Also returns the bond-dimension history of the full emitter+cavities chain (after truncation): t_hist[k] and
+# linkdims_hist[k] for every accepted step, starting with t = 0. Bond 1 is emitter-cavity 1, bond i is cavity i-1 - cavity i.
+# Callers that unpack only three values (mpo, sites, eigenvals) are unaffected.
 
 # The g2 call capture_photon uses: dt/5 grid, the no_cavs largest modes. Returns (g_f, eigenvals).
 photon_couplings(no_cavs, depha, gamma, dt, t_final) = g2(gamma, depha, t_final, dt/5, no_cavs; n_eig=no_cavs)
@@ -831,7 +842,8 @@ function capture_photon(no_cavs, depha, gamma, dt, t_final; progress=true, progr
 
     t = 0.0
     expect_list=[]
-    # t_list = [t,]
+    t_hist = [t]
+    linkdims_hist = [linkdims(sys)]
     t_start = time()
     last_print = -Inf
     # drho needs a numeric cutoff even when ρ itself is never truncated (cutoff = nothing)
@@ -844,6 +856,8 @@ function capture_photon(no_cavs, depha, gamma, dt, t_final; progress=true, progr
         t += dt_
         sys = sys_/trace(sys_, sys_sites)
         isnothing(cutoff) || truncate!(sys; cutoff=cutoff)
+        push!(t_hist, t)
+        push!(linkdims_hist, linkdims(sys))
 
         #progress bar
         if progress && (time() - last_print >= progress_every || t >= t_stop)
@@ -860,8 +874,288 @@ function capture_photon(no_cavs, depha, gamma, dt, t_final; progress=true, progr
     end
     copy_sys /= trace(copy_sys, sys_sites[2:end])
 
-    return copy_sys, sys_sites[2:end], eigenvals
-    # , t_list
+    return copy_sys, sys_sites[2:end], eigenvals, (t_hist, linkdims_hist)
+end
+
+##### Bell state generator as a 2 layer PEPS (moved from Code/BellState_PEPS.jl) #####
+#-------------------------------------------------------------------------
+# Layer 1 holds 4 copies of the photon (signal), layer 2 the ancilla modes. Sites are ordered by mode, so
+# cavity mode i of copies 1-4 sit at 4i+1..4i+4 and a whole mode can be processed (and saved) at a time.
+
+# 4 copies of the captured photon, reordered so the copies of each mode are neighbours, plus a ground-state
+# ancilla layer (dim 5, up to 4 photons after the beamsplitters).
+function bell_peps_init(mpo_i, sites_i, no_cavs)
+    signal_mpo, signal_sites = n_copy_mpo(mpo_i, sites_i, 4)
+    for i=4:-1:1
+        for j=no_cavs:-1:1
+            signal_mpo = swap_ij!(signal_mpo, signal_sites, (no_cavs*(i-1))+j, (no_cavs*(i-1))+j + ((4-i)*(j-1)))
+        end
+    end
+    ancilla_sites = siteinds("Qudit", length(signal_mpo), dim=5)
+    ancilla_mpo = MPO(ancilla_sites, repeat(["Ground",],length(signal_mpo)))
+    return peps_zipper(signal_mpo, ancilla_mpo, signal_sites, ancilla_sites)
+end
+
+function peps_zipper(signal_mpo, ancilla_mpo, signal_sites, ancilla_sites)
+    len = length(signal_sites)
+    peps = Array{ITensor}(undef, 2, len)
+    peps_sites = Array{Index{Int64}}(undef, 2, Int(len))
+    for i=1:len
+        peps[1, i] = signal_mpo[i]
+        peps[2, i] = ancilla_mpo[i]
+        peps_sites[1, i] = signal_sites[i]
+        peps_sites[2, i] = ancilla_sites[i]
+    end
+    return peps, peps_sites
+end
+
+function beamsplitter_peps_tensor_linear!(peps, peps_sites, layer, site_i, site_j)
+    # within layer beamsplitter, gate is split by svd along the chain site_i..site_j (max 4 apart)
+    # site_i and site_j are site numbers and not the site objects
+    bs_list = [;]
+    g = pi/((8)^0.5)
+    bs_op = ((op("A",peps_sites[layer,site_i]) * op("Adag", peps_sites[layer, site_j])) + (op("A",peps_sites[layer,site_j]) * op("Adag",peps_sites[layer,site_i])))
+    bs_op +=  (op("I",peps_sites[layer,site_j])*(op("N", peps_sites[layer, site_i])) - (op("N", peps_sites[layer, site_j]))*op("I",peps_sites[layer,site_i]))
+    bs_op += -(2)^0.5 * (op("I",peps_sites[layer,site_j])*(op("N", peps_sites[layer, site_i])) + (op("N", peps_sites[layer, site_j]))*op("I",peps_sites[layer,site_i]))
+    bs_op = exp((-im * g) * bs_op)
+
+    for i=site_i+1:site_j-1
+        bs_op = bs_op * op("I", peps_sites[layer,i])
+    end
+
+    for i=site_i:site_j-1
+        inds3 = uniqueinds(peps[layer, i], peps[layer, i+1])
+        i == site_i ? nothing : setdiff!(inds3, commoninds(peps[layer, i], peps[layer, i-1]))
+        i == site_i ? nothing : append!(inds3 , commoninds(bs_list[end], bs_op))
+        u,s,v = svd(bs_op, inds3 ; cutoff = 1e-5)
+        push!(bs_list, u)
+        bs_op = s*v
+    end
+    push!(bs_list, bs_op)
+    for i=site_i:site_j
+        temp_tens = bs_list[i-site_i+1]' * peps[layer, i]
+        temp_tens = replaceprime(temp_tens, 2=>1)
+        temp_tens = temp_tens' * swapprime(conj(bs_list[i-site_i+1]), 1, 0)
+        temp_tens = replaceprime(temp_tens, 1=>0)
+        peps[layer, i] = replaceprime(temp_tens, 2=>1)
+    end
+
+    comb = combiner(commoninds(peps[layer, site_i], peps[layer, site_j]))
+    peps[layer,site_i] *= comb
+    peps[layer,site_j] *= comb
+
+    return nothing
+end
+
+function beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, layer, site_i, site_j)
+    # within layer beamsplitter between two sites, gate split in two by svd and applied to site_i and site_j only
+    # site_i and site_j are site numbers and not the site objects
+    bs_list = [;]
+    g = pi/((8)^0.5)
+    bs_op = ((op("A",peps_sites[layer,site_i]) * op("Adag", peps_sites[layer, site_j])) + (op("A",peps_sites[layer,site_j]) * op("Adag",peps_sites[layer,site_i])))
+    bs_op +=  (op("I",peps_sites[layer,site_j])*(op("N", peps_sites[layer, site_i])) - (op("N", peps_sites[layer, site_j]))*op("I",peps_sites[layer,site_i]))
+    bs_op += -(2)^0.5 * (op("I",peps_sites[layer,site_j])*(op("N", peps_sites[layer, site_i])) + (op("N", peps_sites[layer, site_j]))*op("I",peps_sites[layer,site_i]))
+    bs_op = exp((-im * g) * bs_op)
+
+    inds3 = [peps_sites[layer, site_i], peps_sites[layer, site_i]']
+    u,s,v = svd(bs_op, inds3 ; cutoff = 1e-5)
+    push!(bs_list, u)
+    push!(bs_list, s*v)
+
+    #site_i
+    temp_tens = bs_list[1]' * peps[layer, site_i]
+    temp_tens = replaceprime(temp_tens, 2=>1)
+    temp_tens = temp_tens' * swapprime(conj(bs_list[1]), 1, 0)
+    temp_tens = replaceprime(temp_tens, 1=>0)
+    peps[layer, site_i] = replaceprime(temp_tens, 2=>1)
+
+    #site_j
+    temp_tens = bs_list[2]' * peps[layer, site_j]
+    temp_tens = replaceprime(temp_tens, 2=>1)
+    temp_tens = temp_tens' * swapprime(conj(bs_list[2]), 1, 0)
+    temp_tens = replaceprime(temp_tens, 1=>0)
+    peps[layer, site_j] = replaceprime(temp_tens, 2=>1)
+
+    comb = combiner(commoninds(peps[layer, site_i], peps[layer, site_j]))
+    peps[layer,site_i] *= comb
+    peps[layer,site_j] *= comb
+    return nothing
+end
+
+function detect_1100_anymode( site_list )
+    #returns an MPO that detects 1100 in any mode
+    no_cavs = Int(length(site_list) / 4)
+    mps_list = [;]
+    loc_1 = 1
+    loc_2 = 2
+    proj_list = repeat(["Ground",],length(site_list))
+    for i=0:no_cavs-1
+        for j=0:no_cavs-1
+            proj_list[4*i + loc_1] = "Excite1"
+            proj_list[4*j + loc_2] = "Excite1"
+            push!(mps_list, MPO(site_list, proj_list))
+            proj_list[4*i + loc_1] = "Ground"
+            proj_list[4*j + loc_2] = "Ground"
+        end
+    end
+    all_mps = sum(mps_list)
+    return all_mps
+end
+
+# Runs the Bell state circuit on cavity mode i (0-based, sites 4i+1..4i+4): signal-ancilla beamsplitters, the
+# ancilla beamsplitter network, then projects the ancilla layer onto detect_mpo and contracts it into one block.
+# comb carries the combined (ancilla link, detect_mpo link) index into the next mode, pass 1 for the first mode.
+# Returns the 4 signal tensors (site inds still open), the ancilla block and comb for the next mode; the mode's
+# tensors in peps are then set to ITensor(0) to free memory.
+function bell_peps_mode!(peps, peps_sites, detect_mpo, i, comb)
+    no_cavs = Int(length(peps_sites[1,:]) / 4)
+    i1, i2, i3, i4 = 4i+1, 4i+2, 4i+3, 4i+4
+
+    for k in (i1, i2, i3, i4)
+        peps[1,k], peps[2,k] = beamsplitter_peps_tensor(peps[1,k], peps[2,k], peps_sites[1,k], peps_sites[2,k])
+    end
+    beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i1, i2)
+    beamsplitter_peps_tensor_linear!(peps, peps_sites, 2, i3, i4)
+    beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i1, i3)
+    beamsplitter_peps_tensor_nonlinear!(peps, peps_sites, 2, i2, i4)
+
+    for ind in (i1, i2, i3, i4)
+        a = peps[2,ind] * detect_mpo[ind]
+        a *= comb
+        if ind != (no_cavs*4)
+            comb = combiner([commonind(a, peps[2,ind+1]), commonind(a, detect_mpo[ind+1])])
+            a *= comb
+        end
+        peps[2,ind] = a
+    end
+
+    sequ = ITensors.optimal_contraction_sequence(peps[2,i1:i4])
+    block = contract(peps[2,i1:i4]; sequence=sequ)
+    top = peps[1,i1:i4]
+    # the mode is done, free it in the peps
+    peps[:,i1:i4] .= Ref(ITensor(0))
+    return top, block, comb
+end
+
+# Tr(op ρ) of the heralded state, from the per-mode pieces of bell_peps_mode! (tops[i], bottoms[i] for mode i).
+# meas is an MPO (or vector of tensors) on peps_sites[1,:]; nothing gives the trace, i.e. the success probability.
+# The running contraction is absorbed into the next mode's first tensor, so it stays one block per mode.
+function peps_measure(tops, bottoms, peps_sites, meas=nothing)
+    val = 1.0
+    for i in eachindex(tops)
+        top = copy(tops[i])
+        for j=1:4
+            s = peps_sites[1, 4(i-1)+j]
+            top[j] *= isnothing(meas) ? delta(s, s') : meas[4(i-1)+j]
+        end
+        top[1] *= val
+        sequ = ITensors.optimal_contraction_sequence([top; bottoms[i]])
+        val = contract([top; bottoms[i]]; sequence=sequ)
+    end
+    return scalar(val)
+end
+
+function ideal_bell(sites_array)
+    # Making ideal bell state
+    proj_list = repeat([1,],length(sites_array))
+    proj_list[1] = 2
+    proj_list[3] = 2
+    term_1 = MPS(sites_array, proj_list)
+    proj_list = repeat([1,],length(sites_array))
+    proj_list[2] = 2
+    proj_list[4] = 2
+    term_2 = MPS(sites_array, proj_list)
+    bell_mps = (term_1 - term_2) / sqrt(2)
+    bell_mpo = [;]
+    for i in bell_mps
+        push!(bell_mpo, i * i')
+    end
+    for i =1:length(sites_array)-1
+        comb_bell = combiner(commoninds(bell_mpo[i], bell_mpo[i+1]))
+        bell_mpo[i] *= comb_bell
+        bell_mpo[i+1] *= comb_bell
+    end
+    return bell_mpo
+end
+
+# ideal Bell state with a Pauli error (err_type e.g. "IX", "ZX") applied: E |Φ⟩⟨Φ| E
+function error_bell( err_type, sites_array)
+    bell_mpo = ideal_bell(sites_array)
+    X12, X34, Z12, Z34 = op_gen(sites_array)
+    if err_type[1] == 'X' && err_type[2] == 'X'
+        err_mpo = apply(X12, X34)
+    elseif err_type[1] == 'Z' && err_type[2] == 'Z'
+        err_mpo = apply(Z12, Z34)
+    elseif err_type[1] == 'X' && err_type[2] == 'Z'
+        err_mpo = apply(X12, Z34)
+    elseif err_type[1] == 'Z' && err_type[2] == 'X'
+        err_mpo = apply(Z12, X34)
+    elseif err_type[1] == 'I' && err_type[2] == 'X'
+        err_mpo = X34
+    elseif err_type[1] == 'X' && err_type[2] == 'I'
+        err_mpo = X12
+    elseif err_type[1] == 'I' && err_type[2] == 'Z'
+        err_mpo = Z34
+    elseif err_type[1] == 'Z' && err_type[2] == 'I'
+        err_mpo = Z12
+    end
+    comm_ind = 1
+    for i=1:length(sites_array)
+        temp_term = err_mpo[i]' * bell_mpo[i]
+        temp_term = replaceprime(temp_term, 2=>1)
+        temp_term = temp_term' * err_mpo[i]
+        temp_term = replaceprime(temp_term, 1=>0)
+        temp_term = replaceprime(temp_term, 2=>1)
+        temp_term *= comm_ind
+        if i != length(sites_array)
+            comm_ind1 = commonind(bell_mpo[i], bell_mpo[i+1])
+            comm_ind2 = commonind(err_mpo[i], err_mpo[i+1])
+            comm_ind = combiner([comm_ind1, comm_ind2, comm_ind2'])
+            temp_term *= comm_ind
+        end
+        bell_mpo[i] = temp_term
+    end
+    return bell_mpo
+end
+
+# dual rail X and Z on qubit 1 (copies 1,2 of each mode) and qubit 2 (copies 3,4), summed over modes
+function op_gen(site_array)
+
+    no_cavs = Int(length(site_array)/4)
+
+    X_op12 = OpSum()
+    X_op34 = OpSum()
+    Z_op12 = OpSum()
+    Z_op34 = OpSum()
+
+    for i=0:no_cavs-1
+        X_op12 += "A",4i+1,"Adag",4i+2
+        X_op12 += "Adag",4i+1,"A",4i+2
+        X_op34 += "A",4i+3,"Adag",4i+4
+        X_op34 += "Adag",4i+3,"A",4i+4
+        Z_op12 += "Adag",4i+1,"A",4i+1
+        Z_op12 -= "Adag",4i+2,"A",4i+2
+        Z_op34 += "Adag",4i+3,"A",4i+3
+        Z_op34 -= "Adag",4i+4,"A",4i+4
+    end
+
+    X_op12 = MPO(X_op12, site_array)
+    X_op34 = MPO(X_op34, site_array)
+    Z_op12 = MPO(Z_op12, site_array)
+    Z_op34 = MPO(Z_op34, site_array)
+
+    return X_op12, X_op34, Z_op12, Z_op34
+end
+
+# returns -XX, -ZZ and (ZX)(ZX)
+function stabalizer_gen(site_array)
+
+    X_op12, X_op34, Z_op12, Z_op34 = op_gen(site_array)
+    Stab_3 = -1 * apply(X_op12 , X_op34)
+    Stab_4 = -1 * apply(Z_op12 , Z_op34)
+    Stab_5 = apply( apply(Z_op12, X_op12) , apply(Z_op34, X_op34) )
+
+    return Stab_3, Stab_4, Stab_5
 end
 
 fmt_secs(s) = s < 60 ? "$(round(Int, s))s" : "$(div(round(Int, s), 60))m$(lpad(rem(round(Int, s), 60), 2, '0'))s"

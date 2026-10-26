@@ -1,0 +1,134 @@
+stim 1.16.0
+tiles = 16, hexagons = 48, points = 96
+points = 96, total_t = 12, qubits = 1152
+fusions = 576, measurement records = 1152
+hexagons = 48, cycles = 2 -> detectors = 192 (expect 192)
+detector weight distribution: {12: 192}
+hexagon checks: 192, rank 190
+DEM built: all 192 detectors deterministic
+st5: n_cycles=4, total_t=24, n_qubits=2304, nmeas=2304
+x: internal {1: 'green', 2: 'blue', 0: 'red'}  crossing(k,k+1) {0: 'blue', 2: 'green', 1: 'red'}
+y: internal {0: 'green', 1: 'blue', 2: 'red'}  crossing(k,k+1) {1: 'green', 2: 'blue', 0: 'red'}
+Timelike X weight 144, Timelike Z weight 144
+Vertical Z weight 144, Horizontal Z weight 144
+Vertical X weight 128, Horizontal X weight 128
+H-fusions: 288 of 576 fusions
+X checks read only XX records: True
+Z checks read only ZZ records: True
+direct rule == §3 checks with records swapped on XX steps: True
+detector weight distribution: {12: 192}
+  [built H-fusion Lx=6: outcomes=288 checks=48 logicals=6]
+H-fusion circuit Lx=6: noiseless reference sample all-zero: True
+  [built H-fusion Lx=9: outcomes=972 checks=162 logicals=6]
+H-fusion circuit Lx=9: noiseless reference sample all-zero: True
+XX = first record, ZZ = second record of every fusion: OK
+  [built Lx=12: outcomes=2304 checks=382 logicals=6]
+  [bias structure regular fusion Lx=12: outcomes=2304 edges=2304]
+uniform-weight bias matcher vs §6 matcher: predictions differ on 0/2000 shots, matching weight (in edge units) differs on 0
+  [regular fusion (time 2x) Lx=12 n_cycles=8: outcomes=4608, checks and logicals deterministic, 4608 edges (52s)]
+  [regular fusion (time 2x) Lx=18 n_cycles=12: outcomes=15552, checks and logicals deterministic, 15552 edges (1384s)]
+  [regular fusion (time 2x) Lx=24 n_cycles=16: outcomes=36864, checks and logicals deterministic, 36864 edges (17401s)]
+[regular fusion (time 2x)] meas δ=0.0000: 12x18 1.471% (two-pass)  18x24 1.496% (two-pass)  (19205s, total 5.33 h)
+[regular fusion (time 2x)] meas δ=0.1250: 12x18 1.263% (two-pass)  18x24 1.236% (two-pass)  (307s, total 5.42 h)
+[regular fusion (time 2x)] meas δ=0.2500: 12x18 1.139% (two-pass)  18x24 1.139% (two-pass)  (299s, total 5.50 h)
+[regular fusion (time 2x)] meas δ=0.3750: 12x18 1.062% (two-pass)  18x24 1.065% (two-pass)  (304s, total 5.59 h)
+[regular fusion (time 2x)] meas δ=0.5000: 12x18 1.007% (two-pass)  18x24 1.013% (two-pass)  (465s, total 5.72 h)
+[regular fusion (time 2x)] meas δ=0.6250: 12x18 1.014% (two-pass)  18x24 1.007% (two-pass)  (312s, total 5.80 h)
+[regular fusion (time 2x)] meas δ=0.7500: 12x18 1.014% (two-pass)  18x24 1.014% (two-pass)  (298s, total 5.89 h)
+[regular fusion (time 2x)] meas δ=0.8750: 12x18 1.063% (two-pass)  18x24 1.052% (two-pass)  (306s, total 5.97 h)
+[regular fusion (time 2x)] meas δ=1.0000: 12x18 1.484% (two-pass)  18x24 1.491% (two-pass)  (309s, total 6.06 h)
+[regular fusion (time 2x)] erasure δ=0.0000: 12x18 12.517% (two-pass)  18x24 12.634% (two-pass)  (3712s, total 7.09 h)
+[regular fusion (time 2x)] erasure δ=0.2500: 12x18 12.054% (two-pass)  18x24 12.254% (two-pass)  (1927s, total 7.62 h)
+[regular fusion (time 2x)] erasure δ=0.5000: 12x18 11.876% (two-pass)  18x24 11.884% (two-pass)  (1978s, total 8.17 h)
+[regular fusion (time 2x)] erasure δ=0.7500: 12x18 11.449% (two-pass)  18x24 11.462% (two-pass)  (2151s, total 8.77 h)
+[regular fusion (time 2x)] erasure δ=1.0000: 12x18 12.636% (two-pass)  18x24 12.877% (two-pass)  (1845s, total 9.28 h)
+  [all H-fusion (time 2x) Lx=12 n_cycles=8: outcomes=4608, checks and logicals deterministic, 4608 edges (55s)]
+Traceback (most recent call last):
+  File "/Users/ygup3491/Documents/Documents - ADQG22GYJ0N/Errors-in-FBQC-Code/Errors-in-FBQC-Code/Code/bias_threshold/long_time_delta_sweep.py", line 183, in <module>
+    main()
+  File "/Users/ygup3491/Documents/Documents - ADQG22GYJ0N/Errors-in-FBQC-Code/Errors-in-FBQC-Code/Code/bias_threshold/long_time_delta_sweep.py", line 154, in main
+    res = D.two_pass(sweep, ns["TH_COARSE_PS"][noise], ns["TH_FINE_SPAN"][noise], ns["find_crossing"],
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ygup3491/Documents/Documents - ADQG22GYJ0N/Errors-in-FBQC-Code/Errors-in-FBQC-Code/Code/bias_threshold/dense_delta_sweep.py", line 99, in two_pass
+    coarse = {x: sweep(x, delta, coarse_ps) for x in (4, 6)}
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ygup3491/Documents/Documents - ADQG22GYJ0N/Errors-in-FBQC-Code/Errors-in-FBQC-Code/Code/bias_threshold/dense_delta_sweep.py", line 99, in <dictcomp>
+    coarse = {x: sweep(x, delta, coarse_ps) for x in (4, 6)}
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ygup3491/Documents/Documents - ADQG22GYJ0N/Errors-in-FBQC-Code/Errors-in-FBQC-Code/Code/bias_threshold/long_time_delta_sweep.py", line 148, in <lambda>
+    sweep = lambda x, d, ps, _s=sweeps[noise], _c=code: _s(x, _c, d, ps)
+                                                        ^^^^^^^^^^^^^^^^
+  File "/Users/ygup3491/Documents/Documents - ADQG22GYJ0N/Errors-in-FBQC-Code/Errors-in-FBQC-Code/Code/bias_threshold/long_time_delta_sweep.py", line 92, in meas_sweep
+    rates.append(ns["_decode_rate"](S, outcomes, N_WORKERS))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<hexagon cell 98>", line 86, in _decode_rate
+  File "<hexagon cell 44>", line 19, in rows_to_parities_packed
+IndexError: index 4753 is out of bounds for axis 1 with size 4608
+=== restart Mon Oct 19 12:28:35 AEDT 2026 (all-H; regular rows kept) ===
+stim 1.16.0
+tiles = 16, hexagons = 48, points = 96
+points = 96, total_t = 12, qubits = 1152
+fusions = 576, measurement records = 1152
+hexagons = 48, cycles = 2 -> detectors = 192 (expect 192)
+detector weight distribution: {12: 192}
+hexagon checks: 192, rank 190
+DEM built: all 192 detectors deterministic
+st5: n_cycles=4, total_t=24, n_qubits=2304, nmeas=2304
+x: internal {1: 'green', 2: 'blue', 0: 'red'}  crossing(k,k+1) {0: 'blue', 2: 'green', 1: 'red'}
+y: internal {0: 'green', 1: 'blue', 2: 'red'}  crossing(k,k+1) {1: 'green', 2: 'blue', 0: 'red'}
+Timelike X weight 144, Timelike Z weight 144
+Vertical Z weight 144, Horizontal Z weight 144
+Vertical X weight 128, Horizontal X weight 128
+H-fusions: 288 of 576 fusions
+X checks read only XX records: True
+Z checks read only ZZ records: True
+direct rule == §3 checks with records swapped on XX steps: True
+detector weight distribution: {12: 192}
+  [built H-fusion Lx=6: outcomes=288 checks=48 logicals=6]
+H-fusion circuit Lx=6: noiseless reference sample all-zero: True
+  [built H-fusion Lx=9: outcomes=972 checks=162 logicals=6]
+H-fusion circuit Lx=9: noiseless reference sample all-zero: True
+XX = first record, ZZ = second record of every fusion: OK
+  [built Lx=12: outcomes=2304 checks=382 logicals=6]
+  [bias structure regular fusion Lx=12: outcomes=2304 edges=2304]
+uniform-weight bias matcher vs §6 matcher: predictions differ on 0/2000 shots, matching weight (in edge units) differs on 0
+  [all H-fusion (time 2x) Lx=12 n_cycles=8: outcomes=4608, checks and logicals deterministic, 4608 edges (55s)]
+=== restart Mon Oct 19 17:06:20 AEDT 2026 (all-H; skip-reference determinism check) ===
+stim 1.16.0
+tiles = 16, hexagons = 48, points = 96
+points = 96, total_t = 12, qubits = 1152
+fusions = 576, measurement records = 1152
+hexagons = 48, cycles = 2 -> detectors = 192 (expect 192)
+detector weight distribution: {12: 192}
+hexagon checks: 192, rank 190
+DEM built: all 192 detectors deterministic
+st5: n_cycles=4, total_t=24, n_qubits=2304, nmeas=2304
+x: internal {1: 'green', 2: 'blue', 0: 'red'}  crossing(k,k+1) {0: 'blue', 2: 'green', 1: 'red'}
+y: internal {0: 'green', 1: 'blue', 2: 'red'}  crossing(k,k+1) {1: 'green', 2: 'blue', 0: 'red'}
+Timelike X weight 144, Timelike Z weight 144
+Vertical Z weight 144, Horizontal Z weight 144
+Vertical X weight 128, Horizontal X weight 128
+H-fusions: 288 of 576 fusions
+X checks read only XX records: True
+Z checks read only ZZ records: True
+direct rule == §3 checks with records swapped on XX steps: True
+detector weight distribution: {12: 192}
+  [built H-fusion Lx=6: outcomes=288 checks=48 logicals=6]
+H-fusion circuit Lx=6: noiseless reference sample all-zero: True
+  [built H-fusion Lx=9: outcomes=972 checks=162 logicals=6]
+H-fusion circuit Lx=9: noiseless reference sample all-zero: True
+XX = first record, ZZ = second record of every fusion: OK
+  [built Lx=12: outcomes=2304 checks=382 logicals=6]
+  [bias structure regular fusion Lx=12: outcomes=2304 edges=2304]
+uniform-weight bias matcher vs §6 matcher: predictions differ on 0/2000 shots, matching weight (in edge units) differs on 0
+  [all H-fusion (time 2x) Lx=12 n_cycles=8: outcomes=4608, checks and logicals deterministic, 4608 edges (30s)]
+  [all H-fusion (time 2x) Lx=18 n_cycles=12: outcomes=15552, checks and logicals deterministic, 15552 edges (101s)]
+  [all H-fusion (time 2x) Lx=24 n_cycles=16: outcomes=36864, checks and logicals deterministic, 36864 edges (280s)]
+[all H-fusion (time 2x)] meas δ=0.0000: 12x18 1.501% (two-pass)  18x24 1.474% (two-pass)  (723s, total 0.20 h)
+[all H-fusion (time 2x)] meas δ=0.1250: 12x18 1.050% (two-pass)  18x24 1.054% (two-pass)  (297s, total 0.28 h)
+[all H-fusion (time 2x)] meas δ=0.2500: 12x18 1.008% (two-pass)  18x24 1.007% (two-pass)  (289s, total 0.36 h)
+[all H-fusion (time 2x)] meas δ=0.3750: 12x18 1.007% (two-pass)  18x24 1.007% (two-pass)  (301s, total 0.45 h)
+[all H-fusion (time 2x)] meas δ=0.5000: 12x18 1.007% (two-pass)  18x24 1.004% (two-pass)  (440s, total 0.57 h)
+[all H-fusion (time 2x)] meas δ=0.6250: 12x18 1.075% (two-pass)  18x24 1.063% (two-pass)  (304s, total 0.65 h)
+[all H-fusion (time 2x)] meas δ=0.7500: 12x18 1.144% (two-pass)  18x24 1.125% (two-pass)  (300s, total 0.74 h)
+[all H-fusion (time 2x)] meas δ=0.8750: 12x18 1.273% (two-pass)  18x24 1.236% (two-pass)  (306s, total 0.82 h)

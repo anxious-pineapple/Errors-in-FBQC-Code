@@ -1,0 +1,10 @@
+circuit,delta,cross_12x18,cross_18x24,source_12x18,source_18x24
+regular fusion (time 2x),0.0,0.0147112,0.0149599,two-pass,two-pass
+regular fusion (time 2x),0.125,0.0126312,0.0123565,two-pass,two-pass
+regular fusion (time 2x),0.25,0.011388,0.0113949,two-pass,two-pass
+regular fusion (time 2x),0.375,0.0106239,0.0106532,two-pass,two-pass
+regular fusion (time 2x),0.5,0.0100691,0.0101289,two-pass,two-pass
+regular fusion (time 2x),0.625,0.0101436,0.0100683,two-pass,two-pass
+regular fusion (time 2x),0.75,0.0101425,0.0101415,two-pass,two-pass
+regular fusion (time 2x),0.875,0.010632,0.0105158,two-pass,two-pass
+regular fusion (time 2x),1.0,0.0148385,0.0149081,two-pass,two-pass

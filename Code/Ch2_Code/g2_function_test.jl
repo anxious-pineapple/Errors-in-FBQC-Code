@@ -174,4 +174,4 @@ for i in 1:3
 end
 fig = plot(ps...; layout=(3, 3), size=(1500, 1150), left_margin=6Plots.mm, bottom_margin=5Plots.mm,
            plot_title="Temporal modes: equal weights (old) vs 4th-order quadrature weights (new), dt = $dt")
-savefig(fig, joinpath(@__DIR__, "..", "Plots", "modes_old_vs_new_weights.png"))
+savefig(fig, joinpath(@__DIR__, "..", "..", "Plots", "modes_old_vs_new_weights.png"))
